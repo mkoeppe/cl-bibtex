@@ -575,11 +575,31 @@ many text characters.")
   ;; FIXME: Handle special characters (418)
   (>= (length string) min-length))
 
-(defun format-bibtex-name-component (stream tokens full inter-token-string)
+(defun format-bibtex-name-component (stream stream-string
+				     tokens full inter-token-string)
+  ;; From the BibTeX documentation:
+  ;; A tie is the default space character between the last two tokens of
+  ;; the name part, and between the first two tokens if the first token is
+  ;; short enough; otherwise, a space is the default.
+  ;;
+  ;; CL-BibTeX remark: We note that BibTeX treats initial literal
+  ;; characters in a level-1 brace group as belonging to the first
+  ;; name token.  That is:
+  ;;
+  ;;  "C. A. J. Foooo" #1 "{ff}" format.name$ write$ newline$
+  ;;    ==> C.~A.~J.
+  ;;  "C. A. J. Foooo" #1 "{ll}, {ff}" format.name$ write$ newline$
+  ;;    ==> Foooo, C.~A.~J.
+  ;;  "C. A. J. Foooo" #1 "{ll}{, ff}" format.name$ write$ newline$
+  ;;    ==> Foooo, C. A.~J.
+  ;;
+  ;; In the last example, ", C." is the first token, so that it is long enough, so it is not connected with a tie!
+  ;;
+  ;; This might be a bug in BibTeX, but we mimic this behaviour in
+  ;; CL-BibTeX as well.
+  ;;
   (do ((tokens tokens (cdr tokens))
-       (token-index 0 (+ token-index 1))
-       (token-short nil)
-       (prev-token-short nil token-short))
+       (token-index 0 (+ token-index 1)))
       ((null tokens))
     (let ((token (car tokens)))
       (unless (zerop token-index)
@@ -593,20 +613,16 @@ many text characters.")
 	      (princ (car token) stream))
 	     ((null (cdr tokens))	; last token
 	      (princ #\~ stream))
-	     ((and (= token-index 1)
-		   prev-token-short)
+	     ((not (enough-text-chars stream-string
+				      *bibtex-long-token-length*))
 	      (princ #\~ stream))
 	     (t
 	      (princ #\Space stream))))))
       (cond
 	(full
-	 (princ (cdr token) stream)
-	 (setq token-short
-	       (not (enough-text-chars (cdr token)
-				       *bibtex-long-token-length*))))
+	 (princ (cdr token) stream))
 	(t ;; FIXME: Handle special characters here (415)
-	 (princ (char (cdr token) 0) stream)
-	 (setq token-short t))))))  
+	 (princ (char (cdr token) 0) stream))))))  a
 
 (defun format-bibtex-name (stream format-string bibtex-name)
   (let ((string-output nil)
@@ -664,7 +680,7 @@ many text characters.")
 				(#\} (if (zerop brace-level)
 					 (error "Unbalanced braces in BibTeX format string ~S" format-string)
 					 (decf brace-level))))))
-			  (format-bibtex-name-component s tokens
+			  (format-bibtex-name-component s string tokens
 							double-letter inter-token-string)))
 		       ((char= c #\{)
 			(incf brace-level)
@@ -936,6 +952,11 @@ character (%), and don't indent the next line."
 		     (- *bbl-max-print-line* 1))))))))
 
 (defun bbl-terpri ()
+  ;; Trim trailing whitespace
+  (loop while (and (> (length *bbl-line-buffer*) 0)
+		   (whitespace-p (char *bbl-line-buffer*
+					(- (length *bbl-line-buffer*) 1))))
+	do (decf (fill-pointer *bbl-line-buffer*)))
   (princ *bbl-line-buffer* *bbl-output*)
   (terpri *bbl-output*)
   (setf (fill-pointer *bbl-line-buffer*) 0)
@@ -1022,18 +1043,28 @@ control sequences or sub-lists representing groups."
   (with-input-from-string (s string)
     (read-tex-group s)))
 
-(defun write-tex-group (group &optional (stream *standard-output*))
-  (dolist (token group)
-    (etypecase token
-      (character (princ token stream))
-      (list (princ "{" stream)
-	    (write-tex-group token stream)
-	    (princ "}" stream))
-      (string (princ "\\" stream)
-	      (princ token stream)
-	      (unless (and (= (length token) 1)
-			   (not (alpha-char-p (char token 0))))
-		(princ " " stream))))))
+(defun write-tex-group (group &optional (stream *standard-output*)
+			no-terminate-p)
+  "Write the TeX GROUP to STREAM.  If a control word occurs at the end
+of the group, terminate it with whitespace unless NO-TERMINATE-P is
+true."
+  (loop for (token . tail) on group
+	do (etypecase token
+	     (character (princ token stream))
+	     (list (princ "{" stream)
+		   (write-tex-group token stream t)
+		   (princ "}" stream))
+	     (string (princ "\\" stream)
+		     (princ token stream)
+		     (unless (and (= (length token) 1)
+				  (not (alpha-char-p (char token 0))))
+		       ;; Control word, must be terminated
+		       (unless no-terminate-p ; unless otherwise requested
+			 (when (or (null tail)
+				   (and (characterp (car tail))
+					(alpha-char-p (car tail))))
+			   ; when a character or nothing (unknown stuff) follows
+			   (princ " " stream))))))))
 
 (defun for-all-tex-tokens (function string-or-group)
   "Call FUNCTION for every token in the given TeX string (a string or
@@ -1090,8 +1121,11 @@ associated with a special character."
     (do-tex-tokens (token string)
       (etypecase token
 	(character
-	 (cond ((alphanumericp token) (princ token s))
-	       ((sepchar-p token) (princ #\Space s))))
+	 (cond ((alphanumericp token)
+		(princ token s))
+	       ((or (sepchar-p token)
+		    (whitespace-p token))
+		(princ #\Space s))))
 	(string
 	 (let ((purification (assoc token *foreign-character-purifications* :test 'string=)))
 	   (when purification
