@@ -5,6 +5,11 @@ To do:
   custom-bib system (merlin.mbs) may serve as a good datapoint.
 * Add a test suite, consisting of database files and BibTeX style files,
   for testing the correctness of cl-bibtex
+* From Drew McDermott: 
+  In bibtex.system, I changed references to your directory to my
+  directories; there really should be some global vars to handle this.
+  Also, I added a line  :binary-pathname "..."
+  so the binary directory can differ from the source dir.
 
 In the compiler:
 

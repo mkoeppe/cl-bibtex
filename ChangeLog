@@ -1,3 +1,67 @@
+2002-12-11  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
+
+	* bibtex-runtime.lisp (bibtex-string-upcase): Really upcase (not
+	downcase) the string.  Reported by Solofo Ramangalahy.
+	
+	* packages.lisp: Allegro portability fix.  Thanks to Drew McDermott.
+
+	* interpreter.lisp (bst-execute-body, bst-execute-stack-literal,
+	bst-pop/coerce, bst-coerce/push):  Handle the case of the empty
+	BST function body {}.
+
+	* bibtex-compiler.lisp (mvform): Use an extra field to
+	disambiguate between the Lisp form () and the empty BST function
+	body {}.  Change uses throughout.  
+	Reported by Drew McDermott.
+	
+2002-11-25  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
+
+	Version 0.2
+	
+	* bibtex: New shell script.
+
+	* bibtex-compiler.lisp (lisp-write): Use pprint dispatch function
+	for DEFINE-BIBTEX-STYLE.
+	(IF$, compile-bst-function): Change call to bst-name-to-lisp-name.
+
+	* run-lisp: Added from CLOCC.
+
+	* kpathsea.lisp (find-file): Implement for SBCL; implement for all
+	other platforms using CLOCC PORT.
+
+	* bst-reader.lisp (*bst-readtable*): Portability fix for CLISP in
+	macro-character function of #\:.
+	(INTEGERS, STRINGS): Changed use of BST-NAME.
+	(ITERATE, READ, REVERSE, SORT): Fix for target package.
+
+	* bst-functions.lisp (bst-name-to-lisp-name): Use *SPECIAL* naming
+	convention for special variables.
+
+	* bst-builtins.lisp (CALL.TYPE$): Fixes for the target package.
+
+	* bibtex.lisp (compile-bst-file): Write out defpackage, in-package, and
+	define-bibtex-style forms.
+	(*bibtex-styles*, register-bibtex-style, define-bibtex-style,
+	find-bibtex-style): New.
+	(bibtex, cl-bibtex): Unified functionality into the BIBTEX function;
+	removed CL-BIBTEX.  Use FIND-BIBTEX-STYLE.
+
+	* bibtex-runtime.lisp (mark-history): Set *err-count* to 1 if new
+	level of error reached.
+	(process-bib-preamble-command): Fix to handle extra level of
+	quoting around preamble strings.
+	(make-bib-entry, merge-bib-entries): New.
+	(*min-crossref*): New variable.
+	(cited-bib-entries): Implement the crossref feature.
+	(for-all-tex-tokens, do-tex-tokens): New.
+	(bibtex-string-width): Handle special chars.
+	(tex-alpha-char-p): New.
+	(read-tex-control-sequence): New keyword argument :AT-IS-LETTER.
+	(get-aux-command-and-process): Handle the \@input command to deal
+	with nested .aux files.
+	(*foreign-character-purifications*): New.
+	(bibtex-string-purify): Do the purification.
+
 2002-03-18  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
 
 	* kpathsea.lisp (find-file): Take pathname designators, not strings.
