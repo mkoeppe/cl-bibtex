@@ -1117,6 +1117,21 @@ purification.")
 sep-char characters (these get converted to a space) and removes
 certain alphabetic characters contained in the control sequences
 associated with a special character."
+  ;; When the original BibTeX sees a "special character", i.e., a
+  ;; control sequence immediately following a level-1 left brace,
+  ;; purification is put into "special-character mode", where all
+  ;; non-alphanumeric characters (including white-space and sep-chars)
+  ;; are removed.
+  ;;
+  ;; This behavior of the original BibTeX also exposes a bug in
+  ;; gerplain.sty, where the sort order is messed up.  To compute the
+  ;; sort ley, gerplain.sty formats author names in the form "{\sc
+  ;; LAST  FIRST}" and passes this to PURIFY$.  This results in
+  ;; "LASTFIRST".  Thus the order of "Geyer, Foo" and "Ge, Yigong"
+  ;; comes out wrong.
+  ;;
+  ;; FIXME: CL-BibTeX currently does not handle this special case.
+  ;; Therefore, gerplain.sty erroneously works correctly in CL-BibTeX.
   (with-output-to-string (s)
     (do-tex-tokens (token string)
       (etypecase token
