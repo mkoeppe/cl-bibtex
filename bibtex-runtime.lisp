@@ -312,19 +312,6 @@ well."
 		      ))
     (coerce bib-entries 'list)))
 
-(defun read-all-bib-files-and-compute-bib-entries ()
-  (dolist (file *bib-files*)
-    (let ((expanded-file (kpathsea:find-file (concatenate 'string file ".bib"))))
-      (unless expanded-file
-	(format *error-output* "I couldn't find database file `~A'" file))
-      (with-open-file (s expanded-file :if-does-not-exist nil)
-	(unless s
-	  (format *error-output* "I couldn't open database file `~A'" expanded-file))
-	(read-bib-database s))))
-  (setq *bib-entries*
-	(cited-bib-entries (if *cite-all-entries* t *cite-keys*)
-			   :min-crossrefs 2)))
-
 ;;; BibTeX names
 
 (defstruct bibtex-name 
@@ -822,6 +809,20 @@ the delimiter, which is left in the stream."
 
 (defvar *bbl-output* nil "The stream corresponding to the formatted bibliography (BBL) file.")
  
+;;;
+
+(defun read-all-bib-files-and-compute-bib-entries ()
+  (dolist (file *bib-files*)
+    (let ((expanded-file (kpathsea:find-file (concatenate 'string file ".bib"))))
+      (unless expanded-file
+	(format *error-output* "I couldn't find database file `~A'" file))
+      (with-open-file (s expanded-file :if-does-not-exist nil)
+	(unless s
+	  (format *error-output* "I couldn't open database file `~A'" expanded-file))
+	(read-bib-database s))))
+  (setq *bib-entries*
+	(cited-bib-entries (if *cite-all-entries* t *cite-keys*)
+			   :min-crossrefs 2)))
 
 ;;; Misc functions
 

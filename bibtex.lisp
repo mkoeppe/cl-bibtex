@@ -50,19 +50,38 @@
 
 ;;; BST functions
 
+(defclass side-effects ()
+  ((side-effects-p :accessor side-effects-side-effects-p
+		   :initarg :side-effects-p :initform nil)
+   ;; strings designating BST functions, symbols designating Lisp variables
+   (used-variables :accessor side-effects-used-variables
+		   :initarg :used-variables :initform ())
+   (assigned-variables :accessor side-effects-assigned-variables
+		       :initarg :assigned-variables :initform ())
+   (unconditionally-assigned-variables :accessor side-effects-unconditionally-assigned-variables
+				       :initarg :unconditionally-assigned-variables
+				       :initform ()))
+  (:documentation
+   "A description of the side-effects of a computation"))
+
+(defconstant null-side-effects
+  (make-instance 'side-effects))
+
 (defstruct bst-function
   name
   type
+  ignore-redefinition-p  
   lisp-name
-  setter
-  lisp-form-maker
   argument-types
   result-types
-  side-effects-p
+  ;; For use in the BST compiler:
+  lisp-form-maker
+  (side-effects null-side-effects)
   setter-form-maker
-  value
+  ;; For use in the BST interpreter:
+  value					; value as a variable
   body
-  ignore-redefinition-p)
+  setter)
 
 (defvar *builtin-bst-functions* (make-hash-table :size 30 :test 'equalp))
 
@@ -73,7 +92,7 @@
 			   :lisp-name lisp-function
 			   :argument-types argument-types
 			   :result-types result-types
-			   :side-effects-p side-effects-p
+			   :side-effects (make-instance 'side-effects :side-effects-p side-effects-p)
 			   :ignore-redefinition-p ignore-redefinition)))
 
 (defmacro define-bst-primitive (bst-name arglist result-types
@@ -98,35 +117,15 @@
 	     #'(lambda ,(mapcar #'car arglist)
 		 ,compiled))
 	   ())
-     :side-effects-p ,side-effects-p
+     :side-effects (make-instance 'side-effects :side-effects-p ,side-effects-p)
      :ignore-redefinition-p ,ignore-redefinition-p)))
 			       
-
 (register-bst-primitive ">" '((integer) (integer)) '((boolean)) '>)
 (register-bst-primitive "<" '((integer) (integer)) '((boolean)) '<)
 (register-bst-primitive "=" '(t t) '((boolean)) 'equal)
 (register-bst-primitive "+" '((integer) (integer)) '((integer)) '+)
 (register-bst-primitive "-" '((integer) (integer)) '((integer)) '-)
 
-(defun build-associative-form (operators form1 form2)
-  "Build the form `(,@OPERATORS FORM1 FORM2) but if FORM1 and FORM2
-are of this form, use the associativity of the operation to build
-`(,@OPERATORS FORMS...) instead."
-  (labels ((operation-p (form)
-	     (and (consp form)
-		  (let ((index (mismatch operators form :test 'equal)))
-		    (or (not index)
-			(= index (length operators))))))
-	   (args (form)
-	     (subseq form (length operators)))
-	   (arg-forms (form)
-	     (if (operation-p form)
-		 (args form)
-		 (list form))))
-    `(,@operators ,@(arg-forms form1) ,@(arg-forms form2)))) 
-
-(mismatch '(concatenate 'string) '(concatenate 'string 1 2) :test 'equal)
-	  
 (define-bst-primitive "*" ((a (string)) (b (string))) ((string))
   :interpreted (concatenate 'string a b)
   :compiled (build-associative-form `(concatenate 'string) a b))
@@ -144,8 +143,7 @@ are of this form, use the associativity of the operation to build
        (unless (stringp value)
 	 (error "Assignment of non-string value ~S to string variable ~S"
 		value variable))))
-    (funcall (bst-function-setter function) value))
-  :side-effects-p :assignment)
+    (funcall (bst-function-setter function) value)))
 
 (register-bst-primitive "add.period$" '((string)) '((string)) 'add-period-unless-sentence-end)
 
@@ -276,10 +274,17 @@ are of this form, use the associativity of the operation to build
     ((string))
   :interpreted (bibtex-substring s start count)
   :compiled (if (eql count 'most-positive-fixnum)
-		;; We can't use subseq because it throws an error
-		;; if start >= length.  At least get rid of the
-		;; `global.max$' equivalent.
-		`(bibtex-substring ,s ,start)
+		(if (eql start 1)
+		    ;; Program tried to cut the string down to a
+		    ;; length of `entry.max$'.  Since CL-BibTeX does
+		    ;; not have such a limitations, we can just use
+		    ;; the string.
+		    s
+		    ;; We can't use subseq because it throws an error
+		    ;; if start >= length.  At least get rid of the
+		    ;; `global.max$' equivalent.
+		    `(bibtex-substring ,s ,start))
+		;; General form
 		`(bibtex-substring ,s ,start ,count)))  
 
 (define-bst-primitive "swap$" ((a t) (b t)) (t t)
@@ -316,6 +321,9 @@ are of this form, use the associativity of the operation to build
 ;;; BibTeX but in all style files.  We define them here because we
 ;;; can't infer that their result is `boolean' rather than `integer'.
 
+;;; FIXME: BST's and, or functions don't shortcut.  So introduce
+;;; bindings when the subforms have side-effects...
+
 (define-bst-primitive "and" ((a (boolean)) (b (boolean))) ((boolean))
   :interpreted (and a b)
   :compiled (build-associative-form `(and) a b)
@@ -328,7 +336,7 @@ are of this form, use the associativity of the operation to build
 
 (define-bst-primitive "not" ((a (boolean))) ((boolean))
   :interpreted (not a)
-  :compiled `(not ,a)
+  :compiled (build-not-form a)
   :ignore-redefinition-p t)
 
 (defun register-bst-entry (entry func-type type default-value hash-table)
@@ -344,10 +352,10 @@ are of this form, use the associativity of the operation to build
 			   :setter-form-maker #'(lambda (value-form)
 						  `(setf (gethash ,entry *bib-entry*)
 						    ,value-form))
+			   :side-effects (make-instance 'side-effects :used-variables (list entry))
 			   :type func-type
 			   :argument-types '()
-			   :result-types (list type)
-			   :side-effects-p nil)))
+			   :result-types (list type))))
 
 (register-bst-entry "sort.key$" 'str-entry-var '(string) "" *builtin-bst-functions*)
 (register-bst-entry "crossref" 'field '(string missing) nil *builtin-bst-functions*)
@@ -363,10 +371,10 @@ are of this form, use the associativity of the operation to build
 			     :lisp-form-maker #'(lambda () lisp-name)
 			     :setter-form-maker #'(lambda (value-form)
 						    `(setq ,lisp-name ,value-form))
+			     :side-effects (make-instance 'side-effects :used-variables (list variable))
 			     :type func-type
 			     :argument-types '()
 			     :result-types (list type)
-			     :side-effects-p nil
 			     :value initial-value))))
 
 (register-bst-global-var "entry.max$" 'most-positive-fixnum 'int-global-var '(integer)
@@ -567,7 +575,7 @@ signal an error and don't return."
 		  ,(bst-compile-thunkcall name))
 		*main-lisp-body*)
 	  (dolist (*bib-entry* *bib-entries*)
-	    (bst-execute function)))))))
+	    (bst-execute function))))))
 
 (defun bst-macro-command ()
   (when *read-seen-p*
@@ -592,8 +600,7 @@ signal an error and don't return."
 					     `(gethash name *bib-macros*))
 			  :type 'macro
 			  :argument-types '()
-			  :result-types '((string))
-			  :side-effects-p nil)
+			  :result-types '((string)))
        (setf (gethash name *bib-macros*) definition))))
 
 (defun bst-read-command ()

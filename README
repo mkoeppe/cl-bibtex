@@ -59,4 +59,24 @@ diff -u /usr/share/texmf/bibtex/bst/ams/amsalpha.bst /home/mkoeppe/p/cl-bibtex/a
        namesleft #1 - 'namesleft :=
 
 
+Restrictions of the compiler
+============================
+
+The BST->CL compiler works by analyzing the type of the wizard-defined
+functions (i.e., those defined by a FUNCTION command in the BST
+file).  The compiler tries to find out how many "literals" (values) a
+function pops from the stack and how many it pushes and determines
+their types (BOOLEAN, INTEGER, STRING).
+
+* If a wizard-defined function tries to pop a function literal that it
+  hasn't pushed, or leaves a function literal on the stack, you lose.
+  (In other words, you can't define higher-order BST functions.)
+
+* The two branches of an IF$ function must deliver the same net number
+  of values.
+
+* The body of a WHILE$ function must be neutral on the stack.  The
+  predicate must deliver exactly one boolean value.
+
+
  -- Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>
