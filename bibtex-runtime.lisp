@@ -1027,7 +1027,7 @@ associated with a special character."
 (defun bibtex-string-upcase (string)
   "Convert to upper case all letters in STRING at brace-level 0."
   (with-output-to-string (s)
-    (write-tex-group (tex-group-downcase (parse-tex-string string))
+    (write-tex-group (tex-group-upcase (parse-tex-string string))
 		     s)))
 
 (defun tex-group-downcase (group)
