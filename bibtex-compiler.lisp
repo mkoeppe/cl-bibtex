@@ -16,49 +16,6 @@
 ;; * be more strict when checking the type of a popped form
 ;; * If call.type$ occurs only once (in an ITERATE command),
 ;;   use CASE instead of ASSOC/FUNCALL?
-;; * Handle the "tail-recursive" family of FORMAT.NAMES functions:
-;;
-;;FUNCTION {format.names}
-;;{ 's :=
-;;  #1 'nameptr :=
-;;  s num.names$ 'numnames :=
-;;  numnames 'namesleft :=
-;;    { namesleft #0 > }
-;;    { s nameptr "{ff~}{vv~}{ll}{, jj}" format.name$ 't :=
-;;      nameptr #1 >
-;;        { namesleft #1 >          ;; THEN function is (STRING) -> (STRING)
-;;            { ", " * t * }
-;;            { numnames #2 >
-;;                { "," * }
-;;                'skip$
-;;              if$
-;;              t "others" =
-;;                { " et~al." * }
-;;                { " and " * t * }
-;;              if$
-;;            }
-;;          if$
-;;        }
-;;        't                         ;; ELSE function pushes the first name;
-;;                                   ;; we get here with NAMEPTR=1
-;;      if$
-;;      nameptr #1 + 'nameptr :=
-;;      namesleft #1 - 'namesleft :=
-;;    }
-;;  while$                          ;; WHILE BODY produces exactly one value
-;;                                  ;; over all runs
-;;}
-;;
-;;    One possible way to handle this would be to make the type system
-;;    more discriminating, so that integer intervals are handled.
-;;    Then one could unroll one iteration of the above while$ loop,
-;;    deciding statically about the outcome of the "nameptr #1 >"
-;;    test.  (Thanks to Utz-Uwe Haus for the suggestion.)
-;;
-;;    Or: When dynamically inside while$, don't throw an error if
-;;    signature of if$'s branches does not fit but fill up with nil
-;;    and emit a warning.
-;;
 ;; * Try to compile the whole custom-bib system (merlin.mbs)?
 
 (in-package bibtex-compiler)
@@ -162,6 +119,9 @@ applied to the parallel elements in LISTS."
 
 (define-condition bst-compiler-error ()
   ((message :initarg :message :reader bst-compiler-error-message)))
+
+(defvar *currently-compiled-function* nil
+  "Only used for reporting errors.")
 
 (defvar *currently-compiled-body* nil
   "Only used for reporting errors.")
@@ -575,6 +535,9 @@ FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P, and FREE-VARIABLES."
 		(null *borrowed-variables*)))
     (package-as-form)))
 
+(defvar *compiling-while-body* nil
+  "True if compiling the body of a while$ function.")
+
 (define-bst-special-form "if$"
     (let* ((else-literal (pop-literal))
 	   (then-literal (pop-literal))
@@ -586,12 +549,10 @@ FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P, and FREE-VARIABLES."
       (multiple-value-bind (else-form else-arg-types else-res-types else-side-effects)
 	  (let ((*lexicals* ())) ; don't introduce local lexical bindings
 	    (bst-compile-literal else-literal ()))
-	(declare (ignore else-form else-res-types))
 ;;(format t "~&;; else-form ~S is ~S --> ~S~%" else-literal else-arg-types else-res-types)
 	(multiple-value-bind (then-form then-arg-types then-res-types then-side-effects)
 	    (let ((*lexicals* ())) ; don't introduce local lexical bindings
 	      (bst-compile-literal then-literal ()))
-	  (declare (ignore then-form then-res-types))
 ;;(format t "~&;; then-form ~S is ~S --> ~S~%" then-literal then-arg-types then-res-types)
 	  ;; Introduce lexical binding for the union of all
 	  ;; assigned-to variables in both branches.
@@ -609,51 +570,90 @@ FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P, and FREE-VARIABLES."
 		  (push (make-binding :variables (list var)
 				      :mvform (make-mvform :form `(values) :types nil))
 			*form-bindings*)))))
-	  ;; Now we know the arity of both branches.  We compute the
-	  ;; arg types and fill up the shorter arg list.
-	  (let ((arg-types ()))
-	    (do ((then-arg-types then-arg-types (cdr then-arg-types))
-		 (else-arg-types else-arg-types (cdr else-arg-types)))
-		((and (null then-arg-types) (null else-arg-types)))
-	      (push (type-intersection (if then-arg-types (car then-arg-types) t)
-				       (if else-arg-types (car else-arg-types) t))
-		    arg-types))
-	    ;; Pop this many forms to build a temporary form stack
-	    (let ((branch-stack
-		   (mapcar #'(lambda (req-type)
-			       (multiple-value-bind (form type)
-				   (pop-form req-type
-					     :need-variable :if-side-effects)
-				 (make-mvform :form form
-					      :types (list type))))
-			   arg-types)))
-	      (multiple-value-bind (else-form else-arg-types
-					      else-res-types else-side-effects)
-		  (bst-compile-literal else-literal branch-stack :borrowing-allowed nil)
-		(declare (ignore else-arg-types))
-		(multiple-value-bind (then-form then-arg-types
-						then-res-types then-side-effects)
-		    (bst-compile-literal then-literal branch-stack :borrowing-allowed nil)
-		  (declare (ignore then-arg-types))
-		  (unless (= (length then-res-types) (length else-res-types))
-		    (bst-compile-error "THEN function ~S ~%== ~S and ELSE function ~S ~%== ~S deliver ~
-different net number of values: ~%~A -> ~A vs. ~A"
-				       then-literal then-form else-literal else-form
-				       arg-types then-res-types else-res-types))
-		  (let* ((res-types (mapcar #'type-union then-res-types else-res-types))
-			 (side-effects
-			  (max-side-effects (mvform-side-effects val-mvform)
-					    then-side-effects else-side-effects)))
-		    (setf (side-effects-unconditionally-assigned-variables side-effects)
-			  (union (side-effects-unconditionally-assigned-variables
-				  (mvform-side-effects val-mvform))
-				 (intersection (side-effects-unconditionally-assigned-variables then-side-effects)
-					       (side-effects-unconditionally-assigned-variables else-side-effects)
-					       :test 'equalp)
-				 :test 'equalp))
-		    (push-mvform :form (build-if-form (mvform-form val-mvform) then-form else-form)
-				 :types res-types
-				 :side-effects side-effects))))))))))   
+	  ;; Now we know the arity of both branches.  
+	  (let ((arg-types ())
+		(then-balance (- (length then-res-types) (length then-arg-types)))
+		(else-balance (- (length else-res-types) (length else-arg-types)))
+		(then-stack ())
+		(else-stack ()))
+	    (cond ((= then-balance else-balance)
+		   ;; This is the regular case: We have the same
+		   ;; net number of values pushed to the stack.
+		   ;; We compute the arg types and fill up the
+		   ;; shorter arg list.
+		   (do ((then-arg-types (reverse then-arg-types) (cdr then-arg-types))
+			(else-arg-types (reverse else-arg-types) (cdr else-arg-types)))
+		       ((and (null then-arg-types) (null else-arg-types))
+			(setq arg-types (nreverse arg-types)
+			      then-stack (nreverse then-stack)
+			      else-stack (nreverse else-stack)))
+		     (let* ((type (type-intersection
+				   (if then-arg-types (car then-arg-types) t)
+				   (if else-arg-types (car else-arg-types) t)))
+			    (form (pop-single-value-form type
+							 :need-variable :if-side-effects)))
+		       (push type arg-types)
+		       (push form then-stack)
+		       (push form else-stack))))
+		  ((and *compiling-while-body*
+			(> else-balance 0)
+			(= (length then-res-types) (length else-res-types)))
+		   ;; This is a special hack that allows us to compile
+		   ;; the FORMAT.NAMES function.  This function has a
+		   ;; WHILE$ that pushes exactly one value over all
+		   ;; runs; this is accomplished by an IF$ whose THEN
+		   ;; branch is STRING->STRING and whose ELSE branch
+		   ;; is NIL->STRING.
+		   ;; FIXME: This could be easily generalized on a better day.
+		   (format *error-output*
+			   "While compiling wizard-defined function `~S':~% Warning: Employing the producer/modifier while loop trick.~%"
+			   *currently-compiled-function*)			   
+		   (do ((then-arg-types (reverse then-arg-types) (cdr then-arg-types))
+			(else-arg-types (reverse else-arg-types) (cdr else-arg-types)))
+		       ((and (null then-arg-types) (null else-arg-types))
+			(setq arg-types (nreverse arg-types)
+			      then-stack (nreverse then-stack)
+			      else-stack (nreverse else-stack)))
+		     (let* ((type (type-intersection
+				   (if then-arg-types (car then-arg-types) t)
+				   (if else-arg-types (car else-arg-types) t)))
+			    (form (pop-single-value-form type
+							 :need-variable :if-side-effects)))
+		       (push type arg-types)
+		       (push form then-stack)
+		       (unless (null else-arg-types)
+			 (push form else-stack))))
+		   ;;(format *error-output* "~&ARG-TYPES: ~S~%THEN-STACK: ~S~%ELSE-STACK: ~S~%"
+		   ;; arg-types then-stack else-stack))
+		   (setq *compiling-while-body* else-balance))
+		  (t
+		   (bst-compile-error "THEN function ~S ~%== ~S and ELSE function ~S ~%== ~S deliver ~
+different net number of values: ~%~A -> ~A vs. ~A -> ~A"
+				      then-literal then-form else-literal else-form
+				      then-arg-types then-res-types
+				      else-arg-types else-res-types)))
+	    (multiple-value-bind (else-form else-arg-types
+					    else-res-types else-side-effects)
+		(bst-compile-literal else-literal else-stack :borrowing-allowed nil)
+	      (declare (ignore else-arg-types))
+	      (multiple-value-bind (then-form then-arg-types
+					      then-res-types then-side-effects)
+		  (bst-compile-literal then-literal then-stack :borrowing-allowed nil)
+		(declare (ignore then-arg-types))
+		(let* ((res-types (mapcar #'type-union then-res-types else-res-types))
+		       (side-effects
+			(max-side-effects (mvform-side-effects val-mvform)
+					  then-side-effects else-side-effects)))
+		  (setf (side-effects-unconditionally-assigned-variables side-effects)
+			(union (side-effects-unconditionally-assigned-variables
+				(mvform-side-effects val-mvform))
+			       (intersection (side-effects-unconditionally-assigned-variables then-side-effects)
+					     (side-effects-unconditionally-assigned-variables else-side-effects)
+					     :test 'equalp)
+			       :test 'equalp))
+		  (push-mvform :form (build-if-form (mvform-form val-mvform) then-form else-form)
+			       :types res-types
+			       :side-effects side-effects)))))))))   
 
 (define-bst-special-form "pop$"
     (pop-form t :need-variable :if-side-effects))
@@ -664,10 +664,11 @@ different net number of values: ~%~A -> ~A vs. ~A"
 (defun bst-compile-literal-as-while-body (literal)
   "Compile a BST function LITERAL, which is a symbol, designating a
 BST function, or a list (a function body).  Return five values: a Lisp
-BODY, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS, and FREE-VARIABLES."
+BODY, LOOP-VARS, LOOP-VAR-TYPES, INIT-TYPES and SIDE-EFFECTS."
   (let ((*form-stack* ())
 	(*borrowed-variables* ())
-	(*form-bindings* ()))
+	(*form-bindings* ())
+	(*compiling-while-body* t))
     (etypecase literal
       (symbol (compile-funcall literal))
       (cons (compile-body literal)))
@@ -693,7 +694,22 @@ BODY, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS, and FREE-VARIABLES."
 	(t (push-mvform :form `(psetq ,@psetq-args)
 			:types ()
 			:side-effects side-effects))))
-    (package-as-body)))
+    (multiple-value-bind (body arg-types res-types
+			       side-effects free-variables)
+	(package-as-body)
+      (unless (null res-types)
+	;; Since the while-body packager eats as many values as the
+	;; function takes, so we only check whether there remain
+	;; values...
+	(bst-compile-error "BODY function ~S is not stack-balanced: ~S --> ~S"
+			   literal arg-types res-types))
+      (values body free-variables
+	      arg-types
+	      (if (numberp *compiling-while-body*)
+		  ;; this many are uninitialized
+		  (nbutlast arg-types *compiling-while-body*)
+		  arg-types)
+	      side-effects))))      
 
 (define-bst-special-form "while$"
     (let* ((body-literal (pop-literal))
@@ -708,28 +724,25 @@ BODY, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS, and FREE-VARIABLES."
 		     (type= (car pred-res-types) '(boolean)))
 	  (bst-compile-error "PREDICATE function ~S does not deliver exactly one boolean stack value: ~S"
 			     pred-literal pred-res-types))
-	(multiple-value-bind (body body-arg-types body-res-types
-				   body-side-effects free-body-vars)
+	(multiple-value-bind (body loop-vars loop-var-types init-types
+				   body-side-effects)
 	    (bst-compile-literal-as-while-body body-literal)
-	  (unless (null body-res-types)
-	    ;; the while-body packager eats as many values as the
-	    ;; function takes, so we only check whether there remain
-	    ;; values...
-	    ;; (= (length body-arg-types) (length body-res-types))
-	    (bst-compile-error "BODY function ~S is not stack-balanced: ~S --> ~S"
-			       body-literal body-arg-types body-res-types))
 	  ;; filter out locals from the list of variables assigned to
 	  ;; in the body
 	  (setq body-side-effects
-		(remove-variables-from-side-effects free-body-vars body-side-effects))
-	  (let ((init-clauses (mapcar (lambda (var type)
-					`(,var ,(pop-form type)))
-				      free-body-vars body-arg-types))
+		(remove-variables-from-side-effects loop-vars body-side-effects))
+	  (let ((init-clauses
+		 (loop for var in loop-vars
+		       as types = init-types then (cdr types)
+		       collect (if (null types)
+				   var
+				   `(,var
+				     ,(pop-form (car types))))))
 		(values-body
-		 (case (length body-arg-types)
+		 (case (length loop-var-types)
 		   (0 ())
-		   (1 (list (car free-body-vars)))
-		   (2 (list `(values ,@free-body-vars)))))
+		   (1 (list (car loop-vars)))
+		   (2 (list `(values ,@loop-vars)))))
 		(side-effects
 		 (max-side-effects pred-side-effects body-side-effects)))
 	    ;; Only pred is guaranteed to execute, so:
@@ -738,7 +751,7 @@ BODY, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS, and FREE-VARIABLES."
 	    (push-mvform :form `(do ,init-clauses
 				 (,(build-not-form pred-form) ,@values-body)
 				 ,@body)
-			 :types body-arg-types
+			 :types loop-var-types
 			 :side-effects side-effects)))))) 
 
 
@@ -816,7 +829,8 @@ ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS."
     (package-as-form)))	
 
 (defun compile-bst-function (bst-name function-definition stream)
-  (let ((lisp-name (bst-name-to-lisp-name bst-name)))
+  (let ((*currently-compiled-function* bst-name)
+	(lisp-name (bst-name-to-lisp-name bst-name)))
     (handler-case 
 	(multiple-value-bind (defun-form argument-types
 				 result-types side-effects)
@@ -881,27 +895,13 @@ ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS."
   #1 'nameptr :=
   s num.names$ 'numnames :=
   numnames 'namesleft :=
-  \"\"
     { namesleft #0 > }
-    { s nameptr \"{ff~}{vv~}{ll}{, jj}\" format.name$ 't :=
+    { \"Foo\" 't :=
       nameptr #1 >
-	{ namesleft #1 >
-	    { \", \" * t * }
-	    { numnames #2 >
-		{ \",\" * }
-		'skip$
-	      if$
-	      t \"others\" =
-		{ \" et~al.\" * }
-		{ \" and \" * t * }
-	      if$
-	    }
-	  if$
-	}
-	{ t * }
+	{ \"x\" * } 
+	't
       if$
       nameptr #1 + 'nameptr :=
-      namesleft #1 - 'namesleft :=
     }
   while$
 } ")

@@ -25,7 +25,7 @@
     (with-open-file (*lisp-stream* lisp-file :direction :output)
       (with-open-file (bst-stream bst-file)
 	(format *lisp-stream*
-		";;;; This is a -*- Common-Lisp -*- program, automatically translated~%;;;; from the BibTeX style file `~A'~%;;;; by the CL-BibTeX compiler ($Revision: 1.11 $).~%"
+		";;;; This is a -*- Common-Lisp -*- program, automatically translated~%;;;; from the BibTeX style file `~A'~%;;;; by the CL-BibTeX compiler ($Revision: 1.12 $).~%"
 		bst-file)
 	(get-bst-commands-and-process bst-stream)
 	(lisp-write `(defun ,(intern (string-upcase (pathname-name bst-file))) ()
@@ -106,10 +106,10 @@
 
 (progn
   (let ((*lexicals* '("NUMNAMES" "NAMESLEFT" "NAMEPTR" "S" "T" "LEN" "MULTIRESULT")))
-    (compile-bst-file (kpathsea:find-file "amsalpha-xx.bst")
+    (compile-bst-file (kpathsea:find-file "amsalpha.bst")
 		      "/tmp/compiled-bst.lisp"))
   (load "/tmp/compiled-bst.lisp" :if-source-newer :compile)
-  (cl-bibtex "ibm-theory" 'amsalpha-xx))
+  (cl-bibtex "ibm-theory" 'amsalpha))
 
 (let ((*lexicals* '("NUMNAMES" "NAMESLEFT" "NAMEPTR" "S" "T" "LEN" "MULTIRESULT")))
     (compile-bst-file "/home/mkoeppe/w/diss/diss.bst"

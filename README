@@ -25,39 +25,6 @@ using the BST interpreter:
         (load "/tmp/compiled-bst.lisp" :if-source-newer :compile)
 	(cl-bibtex "ibm-theory" 'amsalpha)
 
-However, the compiler cannot compile the FORMAT.NAMES functions in the
-standard styles because they are written in an evil way.  You need to
-change the BST file along the following diff first, so the compiler
-can compile it.
-
-diff -u /usr/share/texmf/bibtex/bst/ams/amsalpha.bst /home/mkoeppe/p/cl-bibtex/amsalpha-xx.bst
---- /usr/share/texmf/bibtex/bst/ams/amsalpha.bst	Mon Mar 27 20:49:36 2000
-+++ /home/mkoeppe/p/cl-bibtex/amsalpha-xx.bst	Wed Feb 13 23:44:19 2002
-@@ -337,11 +337,14 @@
- %
- % (i.e., first name first, no abbreviating to initials).
- 
-+%%%% I HAVE MODIFIED THIS FUNCTION SO THAT IT'S EASIER FOR THE COMPILER
-+
- FUNCTION {format.names}
- { 's :=
-   #1 'nameptr :=
-   s num.names$ 'numnames :=
-   numnames 'namesleft :=
-+  ""
-     { namesleft #0 > }
-     { s nameptr "{ff~}{vv~}{ll}{, jj}" format.name$ 't :=
-       nameptr #1 >
-@@ -358,7 +361,7 @@
- 	    }
- 	  if$
- 	}
--	't
-+	{ t * }
-       if$
-       nameptr #1 + 'nameptr :=
-       namesleft #1 - 'namesleft :=
-
 
 Restrictions of the compiler
 ============================
@@ -75,7 +42,9 @@ their types (BOOLEAN, INTEGER, STRING).
 * The two branches of an IF$ function must deliver the same net number
   of values.
 
-* The body of a WHILE$ function must be neutral on the stack.  The
+* The body of a WHILE$ function must be neutral on the stack (as a
+  special exception, the type of WHILE$ body occurring in the
+  FORMAT.NAMES function of the standard styles is also supported.  The
   predicate must deliver exactly one boolean value.
 
 
