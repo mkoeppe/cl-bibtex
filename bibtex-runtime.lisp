@@ -13,6 +13,7 @@
 	   "*BIBTEX-SPLIT-INITIALS*" "PARSE-BIBTEX-NAME" "PARSE-BIBTEX-NAME-LIST"
 	   "*BIBTEX-LONG-TOKEN-LENGTH*" "*BIBTEX-LONG-NAME-LENGTH*"
 	   "FORMAT-BIBTEX-NAME"
+	   "FORMAT-NTH-BIBTEX-NAME" "NUM-BIBTEX-NAMES" "BIBTEX-SUBSTRING"
 	   "BIB-WARN"
 	   "ADD-PERIOD-UNLESS-SENTENCE-END"
 	   "WHITESPACE-P" "EMPTY-FIELD-P" "BIBTEX-STRING-PURIFY"
@@ -631,6 +632,24 @@ many text characters.")
     (when string-output
       (get-output-stream-string stream))))  
 
+(defun format-nth-bibtex-name (stream format-string names-string index)
+  "Parse NAMES-STRING as an `and'-separated list of BibTeX names, pick
+the name of given 1-based INDEX and format it to STREAM according to
+the BibTeX-style FORMAT-STRING."
+  (unless (> index 0)
+    (bib-warn "Bad index: ~A" index)
+    (return-from format-nth-bibtex-name ""))
+  (let ((bibtex-names (parse-bibtex-name-list names-string)))
+    (when (> index (length bibtex-names))
+      (if (zerop (length bibtex-names))
+	  (bib-warn "There is no name in ~S" names-string)
+	  (bib-warn "There aren't ~A names in ~S" index names-string))
+      (return-from format-nth-bibtex-name ""))
+    (format-bibtex-name stream format-string (elt bibtex-names (- index 1))))) 
+
+(defun num-bibtex-names (names-string)
+  (length (parse-bibtex-name-list names-string)))
+
 ;;; Reading the AUX files
 
 (defvar *aux-file-commands*
@@ -803,6 +822,19 @@ mark."
 (defun empty-field-p (string)
   (or (null string)
       (every #'whitespace-p string)))
+
+(defun bibtex-substring (s start count)
+  "A substring function compatible with BibTeX's substring$."
+  (cond
+    ((or (> start (length s))
+	 (< start (- (length s)))
+	 (<= count 0))
+     "")
+    ((>= start 0)			; take count chars from start
+     (subseq s (max 0 (- start 1)) (min (length s) (+ (- start 1) count))))
+    (t
+     (subseq s (max 0 (- (length s) (- start) (- count 1)))
+	     (+ (length s) start 1)))))
 
 (defun bibtex-string-purify (string)
   "Remove nonalphanumeric characters except for whitespace and
