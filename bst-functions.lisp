@@ -42,6 +42,9 @@
   setter-form-maker
   defun-form
   lexical-p
+  constant-p
+  (num-assignments 0)
+  assigned-value-form
   ;; For use in the BST interpreter:
   value					; value as a variable
   body
@@ -103,7 +106,9 @@
 			   :argument-types '()
 			   :result-types (list type))))
 
-(defun register-bst-global-var (variable lisp-name func-type type initial-value hash-table)
+(defun register-bst-global-var (variable lisp-name func-type type
+				initial-value hash-table
+				&key (constant-p nil))
   (let ((variable (string variable)))
     (setf (gethash variable hash-table)
 	  (make-bst-function :name variable
@@ -117,6 +122,8 @@
 						    `(setq ,lisp-name ,value-form))
 			     :side-effects (make-instance 'side-effects :used-variables (list variable)
 							  :variables-used-before-assigned (list variable))
+			     :assigned-value-form initial-value
+			     :constant-p constant-p
 			     :type func-type
 			     :argument-types '()
 			     :result-types (list type)
@@ -142,10 +149,10 @@ generated for the BibTeX style file")
      (if (string-equal bst-name "T")
 	 (gentemp "TEMP" *bst-package*)
 	 (bst-intern bst-name)))
+    ((:constant)
+     (bst-intern (concatenate 'string "+" bst-name "+")))
     ((:variable)
-     (if (string-equal bst-name "T")
-	 (bst-intern "*T*")
-	 (bst-intern (concatenate 'string "*" bst-name "*"))))))
+     (bst-intern (concatenate 'string "*" bst-name "*")))))
 
 (defun bst-intern (name)
   "Intern NAME into *BST-PACKAGE*, shadowing imported symbols."
