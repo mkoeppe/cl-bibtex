@@ -25,7 +25,7 @@
     (with-open-file (*lisp-stream* lisp-file :direction :output)
       (with-open-file (bst-stream bst-file)
 	(format *lisp-stream*
-		";;;; This is a -*- Common-Lisp -*- program, automatically translated~%;;;; from the BibTeX style file `~A'~%;;;; by the CL-BibTeX compiler ($Revision: 1.13 $).~%"
+		";;;; This is a -*- Common-Lisp -*- program, automatically translated~%;;;; from the BibTeX style file `~A'~%;;;; by the CL-BibTeX compiler ($Revision: 1.14 $).~%"
 		bst-file)
 	(get-bst-commands-and-process bst-stream)
 	(lisp-write `(defun ,(intern (string-upcase (pathname-name bst-file))) ()
@@ -48,16 +48,21 @@
 	(*err-count* 0)
 	(*bib-style* nil)
 	(*bst-functions* (builtin-bst-functions)))	
-    (read-aux-file (concatenate 'string file-stem ".aux"))
-    (let* ((bst-file (kpathsea:find-file (concatenate 'string *bib-style* ".bst")))
-	   (bst-stream (and bst-file
-			   (open bst-file :if-does-not-exist nil))))
-      (unless bst-stream
-	(bib-fatal "I couldn't open style file `~A'" *bib-style*))
-      (with-open-file (*bbl-output* (concatenate 'string file-stem ".bbl")
-				    :direction :output)
-	(let ((*literal-stack* nil))
-	  (get-bst-commands-and-process bst-stream))))))
+    (read-aux-file (make-pathname :type "AUX" :case :common
+				  :defaults file-stem))
+    (let ((bst-file (kpathsea:find-file
+		     (make-pathname :type "BST" :case :common
+				    :defaults *bib-style*))))
+      (unless bst-file
+	(bib-fatal "I couldn't find style file `~A'" *bib-style*))
+      (with-open-file (bst-stream bst-file :if-does-not-exist nil)
+	(unless bst-stream
+	  (bib-fatal "I couldn't open style file `~A'" *bib-style*))
+	(with-open-file (*bbl-output* (make-pathname :type "BBL" :case :common
+						     :defaults file-stem)
+				      :direction :output)
+	  (let ((*literal-stack* nil))
+	    (get-bst-commands-and-process bst-stream)))))))
 
 (defun cl-bibtex (file-stem function)
   (let ((*bib-macros* (make-hash-table))
@@ -70,8 +75,10 @@
 	(*err-count* 0)
 	(*bib-style* nil)
 	(*bst-functions* (builtin-bst-functions)))	
-    (read-aux-file (concatenate 'string file-stem ".aux"))
-    (with-open-file (*bbl-output* (concatenate 'string file-stem ".bbl")
+    (read-aux-file (make-pathname :type "AUX" :case :common
+				  :defaults file-stem))
+    (with-open-file (*bbl-output* (make-pathname :type "BBL" :case :common
+						 :defaults file-stem)
 				  :direction :output)
       (funcall function))))
 
@@ -103,6 +110,8 @@
 
 (with-input-from-string (s "\"a\\ebc\"")
   (read s))
+
+(bibtex "ibm-theory")
 
 (progn
   (setf (ext:default-directory) "/home/mkoeppe/w/iba-papers/")

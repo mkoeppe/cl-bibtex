@@ -7,12 +7,16 @@
 (defun find-file (name)
   #+cmu
   (let ((process
-	 (extensions:run-program "kpsewhich" (list name)
+	 (extensions:run-program "kpsewhich" (list (namestring name))
 				 :output :stream)))
     (prog1
-	(read-line (extensions:process-output process) nil nil)
+	(parse-namestring 
+	 (read-line (extensions:process-output process) nil nil))
       (extensions:process-close process)))
   #-cmu
   (error "FIND-FILE is not implemented"))
 
-  
+
+#|
+(find-file "amsalpha.bst")
+|#
