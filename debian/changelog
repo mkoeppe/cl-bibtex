@@ -1,3 +1,9 @@
+cl-bibtex (0.4-1) unstable; urgency=low
+
+  * New upstream version
+
+ -- Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>  Tue,  1 Apr 2003 22:06:24 +0200
+
 cl-bibtex (0.3.1-1) unstable; urgency=low
 
   * Initial Release
