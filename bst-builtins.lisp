@@ -239,11 +239,25 @@
   :compiled (build-not-form a)
   :ignore-redefinition-p t)
 
+;;; These two occur in amsxtra.bst.
+
+(define-bst-primitive "false" () ((boolean))
+  :interpreted (values nil)
+  :compiled (values nil)
+  :ignore-redefinition-p t)
+
+(define-bst-primitive "true" () ((boolean))
+  :interpreted t
+  :compiled t
+  :ignore-redefinition-p t)
+
 (register-bst-entry "SORT.KEY$" 'str-entry-var '(string) "" *builtin-bst-functions*)
 (register-bst-entry "CROSSREF" 'field '(string missing) nil *builtin-bst-functions*)
 
 (register-bst-global-var "ENTRY.MAX$" 'most-positive-fixnum 'int-global-var '(integer)
-			 most-positive-fixnum *builtin-bst-functions*)
+			 most-positive-fixnum *builtin-bst-functions*
+			 :constant-p t)
 (register-bst-global-var "GLOBAL.MAX$" 'most-positive-fixnum 'int-global-var '(integer)
-			 most-positive-fixnum *builtin-bst-functions*)
+			 most-positive-fixnum *builtin-bst-functions*
+			 :constant-p t)
 
