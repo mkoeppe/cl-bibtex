@@ -4,8 +4,12 @@
 
 (in-package :cl-user)
 
+(defvar *bibtex-source-pathname* "/home/mkoeppe/p/cl-bibtex")
+(defvar *bibtex-binary-pathname* *bibtex-source-pathname*)
+
 (mk:defsystem "BIBTEX"
-  :source-pathname "/home/mkoeppe/p/cl-bibtex"
+  :source-pathname *bibtex-source-pathname*
+  :binary-pathname *bibtex-binary-pathname*
   :source-extension "lisp"
   :components ((:file "packages")
 	       (:file "kpathsea" :depends-on ("packages"))
