@@ -227,10 +227,11 @@ formatted bibliography to the file `FILE-STEM.bbl'."
 	     ((functionp style) style)
 	     ((stringp style) (find-bibtex-style style))
 	     (t (error "Bad :STYLE argument: ~S" style)))))
-      (with-open-file (*bbl-output* (make-pathname :type "BBL" :case :common
-						   :defaults file-stem)
-				    :direction :output)
-	(funcall style-function)))))
+      (with-open-file (bbl-output (make-pathname :type "BBL" :case :common
+						 :defaults file-stem)
+				  :direction :output)
+	(with-bbl-output (bbl-output)
+	  (funcall style-function))))))
 
 ;;;;
 
