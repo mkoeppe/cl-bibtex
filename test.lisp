@@ -309,6 +309,14 @@
 	    (format f "\\bibstyle{~A}~%" ,bibstyle))
     ,@body))
 
+(define-condition bbl-files-differ-condition (simple-error)
+  ((what :initarg :what :reader bbl-files-diff-what)
+   (diff-file-name :initarg :diff-file-name :reader bbl-files-diff-file-name))
+  (:report (lambda (condition stream)
+	     (format stream "~A differ, diff in ~A"
+		     (bbl-files-diff-what condition)
+		     (bbl-files-diff-file-name condition)))))
+
 (defun test-style-file (style-file-name)
   (let ((conditions '()))
     (handler-case 
@@ -331,38 +339,59 @@
 		    (unless failure-p
 		      (format *error-output* "~&----- Loading compiled Lisp program ~A~%"
 			      output-truename)
-		      (load output-truename)
-		      (format *error-output* "~&----- Running Lisp program ~A~%"
-			      output-truename)
-		      (let ((aux-file (make-pathname :type "aux"
-						     :directory *temp-directory*
-						     :defaults style-file-name))
-			    (cl-bbl-file (make-pathname :type "clbbl"
+		      (let ((lisp-bst-thunk (bibtex-compiler:lisp-bibtex-style
+					     output-truename))
+			    (interpreted-bst-thunk (bibtex-compiler:interpreted-bibtex-style
+						    style-file-name)))
+			(format *error-output* "~&----- Running Lisp program ~A~%"
+				output-truename)
+			(let ((aux-file (make-pathname :type "aux"
+						       :directory *temp-directory*
+						       :defaults style-file-name))
+			      (cl-bbl-file (make-pathname :type "clbbl"
+							  :directory *temp-directory*
+							  :defaults style-file-name))
+			      (cli-bbl-file (make-pathname :type "clbbl2"
+							   :directory *temp-directory*
+							   :defaults style-file-name))
+			      (bbl-file (make-pathname :type "bbl"
+						       :directory *temp-directory*
+						       :defaults style-file-name))
+			      (diff-file (make-pathname :type "bbldiff"
 							:directory *temp-directory*
 							:defaults style-file-name))
-			    (bbl-file (make-pathname :type "bbl"
-						     :directory *temp-directory*
-						     :defaults style-file-name))
-			    (diff-file (make-pathname :type "bbldiff"
-						      :directory *temp-directory*
-						      :defaults style-file-name)))
-			(with-temporary-aux-file
-			    (aux-file :citations '("*")
-				      :bibdata *test-bibliographies*
-				      :bibstyle (namestring
-						 (make-pathname :type nil
-								:defaults style-file-name)))
-			  (bibtex-compiler:bibtex (namestring aux-file))
-			  (rename-file bbl-file cl-bbl-file)
-			  (format *error-output* "~&----- Running the original BibTeX~%")
-			  (unless (zerop (call-original-bibtex aux-file))
-			    (error "Original BibTeX failed."))
-			  (format *error-output* "~&----- Comparing results~%")
-			  (if (zerop (call-diff bbl-file cl-bbl-file diff-file))
-			      (format *error-output* "Identical.~%")
-			      (error "BBL files differ, diff in ~A"
-				     diff-file))))))))))
+			      (diffi-file (make-pathname :type "bbl2diff"
+							 :directory *temp-directory*
+							 :defaults style-file-name)))
+			  (with-temporary-aux-file
+			      (aux-file :citations '("*")
+					:bibdata *test-bibliographies*
+					:bibstyle (namestring
+						   (make-pathname :type nil
+								  :defaults style-file-name)))
+			    (bibtex-compiler:bibtex aux-file :style lisp-bst-thunk)
+			    (rename-file bbl-file cl-bbl-file)
+			    (format *error-output* "~&----- Running the BST file interpreter~%")
+			    (bibtex-compiler:bibtex aux-file :style interpreted-bst-thunk)
+			    (rename-file bbl-file cli-bbl-file)
+			    (format *error-output* "~&----- Running the original BibTeX~%")
+			    (unless (zerop (call-original-bibtex aux-file))
+			      (error "Original BibTeX failed."))
+			    (format *error-output* "~&----- Comparing results~%")
+			    (if (zerop (call-diff bbl-file cl-bbl-file diff-file))
+				(format *error-output* "BibTeX and CL-BibTeX (compiled) output is identical.~%")
+				(error (make-condition 'bbl-files-differ-condition
+						       :what "BibTeX and CL-BibTeX (compiled) output files"
+						       :diff-file-name diff-file)))
+			    (if (zerop (call-diff bbl-file cli-bbl-file diffi-file))
+				(format *error-output* "BibTeX and CL-BibTeX (interpreted) output is identical.~%")
+				(error (make-condition 'bbl-files-differ-condition
+						       :what "BibTeX and CL-BibTeX (interpreted) output files"
+						       :diff-file-name diffi-file))))))))))))
       (error (condition)
+	(princ condition)
+	(terpri))
+      (bibtex-compiler::bst-compiler-error (condition)
 	(princ condition)
 	(terpri)))
     (nreverse conditions)))
@@ -382,8 +411,11 @@
 (defun clear-results ()
   (setq *style-files/results* '()))
 
-(defun show-results ()
-  (format t "Style files:~%~:{~&~A~%~{~4T~W~%~}~}~%" *style-files/results*))
+(defun show-results (&optional verbose)
+  (format t (if verbose
+		"Style files:~%~:{~&***** ~A~%~{~4T~A~%~}~}~%"
+		"Style files:~%~:{~&***** ~A~%~{~4T~W~%~}~}~%")
+	  *style-files/results*))
 
 (defvar *original-bibtex* "/usr/bin/bibtex.tetex")
 

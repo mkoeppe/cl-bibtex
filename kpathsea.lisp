@@ -5,8 +5,12 @@
 (in-package :kpathsea)
 
 ;; We use CLOCC PORT to run programs if we are not running in CMUCL or SBCL.
-#-(or cmu sbcl)
-(require "PORT")
+;;#+clisp
+;;(eval-when (:compile-toplevel :load-toplevel :execute)
+;;  (cl:require :PORT))
+
+#-(or cmu sbcl clisp)
+(cl:require :PORT)
 
 (defun find-file (name)
   #+cmu

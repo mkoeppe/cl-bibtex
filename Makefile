@@ -1,4 +1,4 @@
-VERSION=0.3.1
+VERSION=0.4
 
 SOURCES=Makefile AUTHORS COPYING ChangeLog README TODO NEWS \
 	bibtex.system \
@@ -6,6 +6,7 @@ SOURCES=Makefile AUTHORS COPYING ChangeLog README TODO NEWS \
 	bst-builtins.lisp bst-functions.lisp bst-reader.lisp \
 	interpreter.lisp kpathsea.lisp lisp-form-builder.lisp \
 	packages.lisp \
+	test.lisp \
 	bibtex run-lisp bibtex-program.lisp
 
 tar:

@@ -1,3 +1,23 @@
+2003-03-31  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
+
+ 	Version 0.4
+	
+	* bst-builtins.lisp (CHR.TO.INT$): Fix warning in interpreted mode.
+
+	* bibtex.lisp (*registered-bibtex-style*): New.
+	(register-bibtex-style): Set it here.
+
+	(interpreted-bibtex-style, lisp-bibtex-style): New.
+	(find-bibtex-style): Use it here.
+
+	* bibtex-runtime.lisp (*foreign-character-purifications*): Removed.
+	(defstruct foreign-character, *foreign-characters*,
+	define-foreign-character, find-foreign-character): New.
+	(bibtex-string-purify): Use it here.
+
+	(bibtex-string-upcase, bibtex-string-downcase,
+	bibtex-string-titledowncase): Handle special characters.
+
 2003-02-06  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
 
 	* bibtex-runtime.lisp (+bib-whitespace-character-list+): Add #\Tab.

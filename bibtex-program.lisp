@@ -35,6 +35,8 @@
 	(setq file-stem arg))))
     (unless file-stem
       (error "Need exactly one file argument"))
+    (format *error-output*
+	    "This is CL-BibTeX, Version ~A" bibtex-compiler:+version+)
     (bibtex-compiler:bibtex file-stem)))
 
 (defun emulate-bibtex (argv)
@@ -44,5 +46,6 @@
       (error (condition)
 	(format *error-output* "~&bibtex: ~A~%"
 		condition)
+	(format *error-output* "~&Try `bibtex --help' for more information.~%")
 	(unix:unix-exit 1)))))
 

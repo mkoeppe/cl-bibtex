@@ -1,6 +1,6 @@
 An -*- outline -*- of the user-visible changes in CL-BibTeX
 
-* News in version 0.3.2 (not yet released)
+* News in version 0.4
 
 ** BibTeX's output line breaking mechanism has been implemented.
 
@@ -41,6 +41,8 @@ An -*- outline -*- of the user-visible changes in CL-BibTeX
    well as the original style file; but when one of the broken corner
    cases occurs, a run-time error will be signaled.
 
+** The system now has a test-suite for testing the correctness.
+
 ** Bug fixes:
 
 *** A bug regarding functions that return multiple values has been fixed.
@@ -60,6 +62,8 @@ An -*- outline -*- of the user-visible changes in CL-BibTeX
     There were too many tildes in some formatted names.  The sort
     order was sometimes wrong, due to a bug in PURIFY$.  Changing the
     case of a string resulted in extraneous whitespace after control words.
+
+*** The capitalization of "foreign characters" has been corrected.
 
 *** Crossrefs are also resolved when all entries are cited (\cite{*}).
 

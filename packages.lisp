@@ -37,4 +37,5 @@
   #+(or allegro clisp) (:shadow #:variable)
   (:export #:compile-bst-file #:bibtex
 	   #:*bibtex-styles* #:*allow-load-lisp-bibtex-style*
-	   #:register-bibtex-style #:define-bibtex-style #:find-bibtex-style))
+	   #:register-bibtex-style #:define-bibtex-style #:find-bibtex-style
+	   #:lisp-bibtex-style #:interpreted-bibtex-style))

@@ -26,6 +26,7 @@
 	       (:file "bibtex" :depends-on ("bibtex-compiler" "bst-reader"))))
 
 #|
+(defparameter *bibtex-source-pathname* "/home/mkoeppe/p/cl-bibtex")
 (mk:operate-on-system "BIBTEX" 'compile :force t)
 (mk:operate-on-system "BIBTEX" 'load)
 |#
