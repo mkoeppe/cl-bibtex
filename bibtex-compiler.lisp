@@ -16,8 +16,35 @@ BST program.")
   "A list collecting the forms corresponding to EXECUTE, ITERATE,
 READ, REVERSE, and SORT commands in reverse order.")
 
+(defvar *bib-entries-symbol* nil
+  "The name of the lexical variable in *main-lisp-body* that stores
+the bib entries.")
+
+(defvar *bibtex-pprint-dispatch*
+  (let ((pprint-dispatch (copy-pprint-dispatch)))
+    #-clisp				; CLISP says "Lisp stack overflow. RESET"
+    (set-pprint-dispatch '(cons (member DEFINE-BIBTEX-STYLE))
+			 (lambda (*standard-output* obj)
+			   (pprint-logical-block (*standard-output* obj :prefix "(" :suffix ")")
+			     (write (pprint-pop))
+			     (write-char #\Space)
+			     (pprint-newline :miser)
+			     (pprint-indent :current 0)
+			     (write (pprint-pop))
+			     (pprint-indent :block 1)
+			     (pprint-newline :mandatory)
+			     (write (pprint-pop))
+			     (loop (pprint-exit-if-list-exhausted)
+				   (write-char #\Space)
+				   (pprint-newline :linear)
+				   (write (pprint-pop)))))
+			 0
+			 pprint-dispatch)
+    pprint-dispatch))
+
 (defun lisp-write (arg)
-  (let ((*print-case* :downcase))
+  (let ((*print-case* :downcase)
+	(*print-pprint-dispatch* *bibtex-pprint-dispatch*))
     (pprint arg *lisp-stream*))
   (terpri *lisp-stream*))
 
@@ -548,7 +575,7 @@ FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P, and FREE-VARIABLES."
 			 (member name *lexicals* :test 'string-equal)
 			 (not (assoc name *lexical-variables*)))
 		(let* ((fun (get-bst-function name))
-		       (var (make-variable :name (bst-name-to-lisp-name name)
+		       (var (make-variable :name (bst-name-to-lisp-name name :lexical)
 					   :type (car (bst-function-result-types fun)))))
 		  (push (cons name var) *lexical-variables*)
 		  (push (make-binding :variables (list var)
@@ -814,11 +841,12 @@ ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS."
 
 (defun compile-bst-function (bst-name function-definition stream)
   (let ((*currently-compiled-function* bst-name)
-	(lisp-name (bst-name-to-lisp-name bst-name)))
+	(lisp-name (bst-name-to-lisp-name bst-name :function)))
     (handler-case 
 	(multiple-value-bind (defun-form argument-types
 				 result-types side-effects)
 	    (bst-compile-defun lisp-name function-definition)
+	  #-clisp    ; CLISP does not seem to handle ~< ... ~:> properly
 	  (format stream
 		  "~%~<;; ~@;~:S --> ~:S ~:[~;with side-effects ~]~:[~;~%with assignment to~:*~{ ~S~}~]~:[~;~%with possible assignment to~:*~{ ~S~}~]~:[~;~%with reference to~:*~{ ~S~}~]~:>"
 		  (list argument-types result-types
