@@ -1,0 +1,25 @@
+An -*- outline -*- of the new features in CL-BibTeX
+
+* News in version 0.2
+
+** Nested .aux files are now handled.
+
+** The crossref feature has been implemented.
+
+** A model for Lisp BibTeX styles has been implemented.
+
+   A Lisp BibTeX style is a Lisp program in a file with type "lbst".  
+   The Lisp program is supposed to define a BibTeX style using the
+   macro DEFINE-BIBTEX-STYLE or the function REGISTER-BIBTEX-STYLE.
+
+   The BIBTEX function first looks for already registered styles, then
+   it tries to find and load "lbst" files, then it tries to find and
+   interpret "bst" files.
+
+   The BST->CL compiler now puts all the code of a BibTeX style into a
+   separate package and emits a DEFINE-BIBTEX-STYLE form.
+
+** Portability improvements.
+
+   CL-BibTeX now works with CMUCL, SBCL 0.7.9, and CLISP 2.30.
+
