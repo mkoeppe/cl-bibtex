@@ -1,0 +1,10 @@
+This package was debianized by the upstream author Matthias Koeppe
+<mkoeppe@mail.math.uni-magdeburg.de> on Sun, Dec 15 16:48:05.
+
+It can be downloaded from http://www.freesoftware.fsf.org/cl-bibtex/
+
+Copyright:
+;;; A BibTeX re-implementation in Common Lisp
+;;; Copr. 2001, 2002 Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>
+;;; This is free software, licensed under GNU GPL (see file COPYING)
+

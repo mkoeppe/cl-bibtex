@@ -1,4 +1,4 @@
-VERSION=0.2
+VERSION=0.3.1
 
 SOURCES=Makefile AUTHORS COPYING ChangeLog README TODO NEWS \
 	bibtex.system \

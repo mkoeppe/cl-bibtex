@@ -1,10 +1,14 @@
 (in-package :common-lisp-user)
 
-(let ((*load-verbose* nil)
-      (*compile-verbose* nil))
-  (load "/home/mkoeppe/p/cl-bibtex/bibtex.system")
-  (mk:operate-on-system :bibtex 'compile)
-  (mk:operate-on-system :bibtex 'load))
+;;(let ((*load-verbose* nil)
+;;      (*compile-verbose* nil))
+;;  (load "/home/mkoeppe/p/cl-bibtex/bibtex.system")
+;;  (mk:operate-on-system :bibtex 'compile)
+;;  (mk:operate-on-system :bibtex 'load))
+
+(setq *load-verbose* nil)
+
+(require :bibtex)
 
 ;;; The emulation of the bibtex program
 
