@@ -3,14 +3,15 @@
 ;;; This is free software, licensed under GNU GPL (see file COPYING)
 
 ;; TODO:
-;; * while$ must be extended to handle "tail recursions"
+;; * Check that the pop/push order is fine in while$ bodys
+;;   that are (INTEGER), (STRING) -> (INTEGER), (STRING) 
 ;; * order of side effects
 ;; * maybe beautify (if ... (progn ...) (progn ...)) ==> (cond ...)
-;; * maybe special form for := that chooses = or string=
+;; * maybe special form for = that chooses = or string=
+;; * don't name the temporary variables occuring in while$ "ARGnn"
 ;; * propagate types when they get more specific:
 ;;   { $duplicate + } is of type (INTEGER) -> (INTEGER), not T -> (INTEGER)
 ;; * boolean/integer issues
-;; * copy top-level comments...
 ;; * Handle the "tail-recursive" family of FORMAT.NAMES functions:
 ;;
 ;;FUNCTION {format.names}
@@ -84,7 +85,8 @@
 (defstruct binding
   "A multiple-value binding frame"
   variables
-  form)
+  form
+  side-effects-p)
 
 (defstruct mvform
   "A multiple-values-delivering form on the stack"
@@ -125,52 +127,67 @@ applied to the parallel elements in LISTS."
 (defun bst-compile-error (format-string &rest args)
   (error (make-condition 'bst-compiler-error :message (apply 'format nil format-string args))))
 
+(defvar *bst-gentemp-counter* 0)
+
+(defun bst-gentemp (prefix)
+  (intern (format nil "~A~A" prefix (incf *bst-gentemp-counter*))))  
+
 (defun pop-form (type &key (need-variable nil) (when-empty :borrow))
   "Pop a Lisp form delivering a single value of given TYPE from
-*FORM-STACK*.  If the stack is empty, borrow a variable instead.
-Return two values: the Lisp form and the actual type of the delivered
-value."
+*FORM-STACK*.  If the stack is empty, borrow a variable instead if
+:WHEN-EMPTY is :BORROW, or return nil if :WHEN-EMPTY is nil.  If
+:NEED-VARIABLE is nil, POP-FORM may return a side-effecting
+single-value form \(it should only be called once, in order).  If
+:NEED-VARIABLE is :IF-SIDE-EFFECTS, POP-FORM will introduce a variable
+for side-effecting forms.  Otherwise, POP-FORM will introduce a
+variable for all non-atom forms.  Return three values: the Lisp form,
+the actual type of the delivered value, and SIDE-EFFECTS-P."
   (loop (when (null *form-stack*)
-	  (case when-empty
+	  (ecase when-empty
 	    ((nil) (return-from pop-form nil))
 	    (:borrow 
 	     ;; Borrow a variable
-	     (let ((arg-symbol (gentemp "ARG")))
+	     (let ((arg-symbol (bst-gentemp "ARG")))
 	       (push (make-variable :name arg-symbol :type type)
 		     *borrowed-variables*)
 	       (return-from pop-form (values arg-symbol type))))))
 	(let ((top-mvform (pop *form-stack*)))
-	  (cond
-	    ((mvform-literal top-mvform)
-	     (bst-compile-error "Expecting a form on the stack, got a literal ~S."
-				(mvform-literal top-mvform)))
-	    ((or (symbolp (mvform-form top-mvform)) ; Variable, delivering one value
-		 (and (not need-variable) ; other form delivering one value w/o side-effect
-		      (not (mvform-side-effects-p top-mvform))
-		      (= (length (mvform-types top-mvform)) 1)))
-	     ;; Exactly one value, so return the form
-	     (let* ((available-type (car (mvform-types top-mvform)))
-		    (effective-type (type-intersection type available-type)))
-	       (when (null-type effective-type)
-		 (bst-compile-error "Type mismatch: expecting ~A, got ~A."
-				    type available-type))
-	       (return-from pop-form (values (mvform-form top-mvform)
-					     effective-type))))
-	    (t
-	     ;; Zero or more than two values, so make a binding frame
-	     ;; and push single-value forms referring to the bound
-	     ;; variables.  Then continue.
-	     (multiple-value-bind (variables mvforms)
-		 (map2 (lambda (type)
-			 (let ((symbol (gentemp)))
-			   (values (make-variable :name symbol :type type)
-				   (make-mvform :form symbol :types (list type)))))
-		       (mvform-types top-mvform))
-	       ;;(format t "variables: ~A~%mvforms: ~A~%" variables mvforms)
-	       (push (make-binding :variables variables
-				   :form (mvform-form top-mvform))
-		     *form-bindings*)
-	       (setq *form-stack* (nconc mvforms *form-stack*))))))))
+	  (labels ((return-the-form ()
+		     (let* ((available-type (car (mvform-types top-mvform)))
+			    (effective-type (type-intersection type available-type)))
+		       (when (null-type effective-type)
+			 (bst-compile-error "Type mismatch: expecting ~A, got ~A."
+					    type available-type))
+		       (return-from pop-form (values (mvform-form top-mvform) effective-type (mvform-side-effects-p top-mvform))))))
+	    (cond
+	      ((mvform-literal top-mvform)
+	       (bst-compile-error "Expecting a form on the stack, got a literal ~S."
+				  (mvform-literal top-mvform)))
+	      ((not (consp (mvform-form top-mvform))) ; Variable, string, or number, delivering one value
+	       (return-the-form))
+	      ((and (eql need-variable :if-side-effects)
+		    (not (mvform-side-effects-p top-mvform))
+		    (= (length (mvform-types top-mvform)) 1))
+	       (return-the-form))
+	      ((and (not need-variable)
+		    (= (length (mvform-types top-mvform)) 1))
+	       (return-the-form))
+	      (t
+	      ;; Zero or more than two values, so make a binding frame
+	       ;; and push single-value forms referring to the bound
+	       ;; variables.  Then continue.
+	       (multiple-value-bind (variables mvforms)
+		   (map2 (lambda (type)
+			   (let ((symbol (bst-gentemp "T")))
+			     (values (make-variable :name symbol :type type)
+				     (make-mvform :form symbol :types (list type)))))
+			 (mvform-types top-mvform))
+	 ;;(format t "variables: ~A~%mvforms: ~A~%" variables mvforms)
+		 (push (make-binding :variables variables
+				     :form (mvform-form top-mvform)
+				     :side-effects-p (mvform-side-effects-p top-mvform))
+		       *form-bindings*)
+		 (setq *form-stack* (nconc mvforms *form-stack*)))))))))
 
 (defun pop-literal ()
   "Pop a literal from *FORM-STACK*."
@@ -187,13 +204,17 @@ value."
 (defun package-as-body ()
   "Build a Lisp body corresponding to the computation captured in
 *FORM-BINDINGS* and *FORM-STACK*.  The Lisp body contains free
-variables corresponding to *BORROWED-VARIABLES*.  Return four values:
-BODY, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P."
+variables corresponding to *BORROWED-VARIABLES*.  Return five values:
+BODY, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P, and
+FREE-VARIABLES."
   (let ((*form-stack* *form-stack*)
 	(result-forms ())
-	(result-types ()))
-    (loop (multiple-value-bind (form type)
-	      (pop-form t :when-empty nil) ; modifies the place *form-stack*
+	(result-types ())
+	(any-side-effects nil))
+    (loop (multiple-value-bind (form type side-effects-p)
+	      (pop-form t :need-variable nil :when-empty nil) ; modifies the place *form-stack*
+	    (setq any-side-effects
+		  (or any-side-effects side-effects-p))
 	    (cond
 	      (form
 	       (push form result-forms)
@@ -207,6 +228,8 @@ BODY, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P."
 		  (1 (list (car result-forms)))
 		  (t (list `(values ,@result-forms))))))
       (dolist (binding *form-bindings*)
+	(setq any-side-effects
+	      (or any-side-effects (binding-side-effects-p binding)))
 	(case (length (binding-variables binding))
 	  (0 (setq body (cons (binding-form binding)
 			      body)))
@@ -222,30 +245,34 @@ BODY, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P."
       (values body
 	      (mapcar #'variable-type *borrowed-variables*)
 	      result-types
-	      nil))))
+	      any-side-effects
+	      (mapcar #'variable-name *borrowed-variables*)))))
 
 (defun package-as-form ()
   "Build a Lisp form corresponding to the computation captured in
 *FORM-BINDINGS* and *FORM-STACK*.  The Lisp form contains free
 variables corresponding to *BORROWED-VARIABLES*.  Return four values:
 LISP-FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P."
-  (multiple-value-bind (body argument-types result-types side-effects-p)
+  (multiple-value-bind (body argument-types result-types
+			     side-effects-p free-variables)
       (package-as-body)
     (values (case (length body)
 	      (0 `nil)
 	      (1 (car body))
 	      (t `(progn ,@body)))
-	    argument-types result-types side-effects-p)))
+	    argument-types result-types side-effects-p
+	    free-variables)))
  
 (defun package-as-procedure (name)
   "Build a DEFUN NAME form from *FORM-BINDINGS*, *BORROWED-VARIABLES*
 and *FORM-STACK*.  If NAME is nil, build a LAMBDA form instead.
 Return four values: DEFUN-OR-LAMBDA-FORM, ARGUMENT-TYPES,
 RESULT-TYPES, SIDE-EFFECTS-P."
-  (multiple-value-bind (body argument-types result-types side-effects-p)
+  (multiple-value-bind (body argument-types result-types
+			     side-effects-p free-variables)
       (package-as-body)
     (values `(,@(if name `(defun ,name) `(lambda))
-	      ,(mapcar #'variable-name *borrowed-variables*)
+	      ,free-variables
 	      ,@body)
 	    argument-types result-types side-effects-p)))
 
@@ -267,19 +294,20 @@ special forms by directly manipulating the current compiler data.")
       (push (make-mvform :form form :types (list type)) *form-stack*)))
 
 (define-bst-special-form "swap$"
-    (multiple-value-bind (form1 type1) (pop-form t :need-variable t)
-      (multiple-value-bind (form2 type2) (pop-form t :need-variable t)
+    (multiple-value-bind (form1 type1) (pop-form t :need-variable :if-side-effects)
+      (multiple-value-bind (form2 type2) (pop-form t :need-variable :if-side-effects)
 	(push (make-mvform :form form1 :types (list type1)) *form-stack*)
 	(push (make-mvform :form form2 :types (list type2)) *form-stack*))))
 
 (define-bst-special-form ":="
     (let ((var (pop-literal)))
-      (multiple-value-bind (value-form value-type) (pop-form t)
+      (multiple-value-bind (value-form value-type) (pop-form t :need-variable nil)
 	;;(format t "var: ~S value: ~S~%" var value-form)
 	(let* ((bst-function (get-bst-function var))
 	       (setter-form-maker (bst-function-setter-form-maker bst-function))
 	       (setter-form (funcall setter-form-maker value-form)))
-	  (push (make-mvform :form setter-form :types ()) *form-stack*)))))
+	  (push (make-mvform :form setter-form :types () :side-effects-p t)
+		*form-stack*)))))
 
 (defun get-bst-function (name)
   (let ((function (gethash (string name) *bst-functions*)))
@@ -289,8 +317,8 @@ special forms by directly manipulating the current compiler data.")
 
 (defun bst-compile-literal (literal stack &key (borrowing-allowed t))
   "Compile a BST function LITERAL , which is a symbol, designating a
-BST function, or a list (a function body).  Return four values: a Lisp
-FORM, ARGUMENT-TYPES, RESULT-TYPES, and SIDE-EFFECTS-P."
+BST function, or a list (a function body).  Return five values: a Lisp
+FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P, and FREE-VARIABLES."
   (let ((*form-stack* stack)
 	(*borrowed-variables* ())
 	(*form-bindings* ()))
@@ -304,7 +332,7 @@ FORM, ARGUMENT-TYPES, RESULT-TYPES, and SIDE-EFFECTS-P."
 (define-bst-special-form "if$"
     (let* ((else-literal (pop-literal))
 	   (then-literal (pop-literal))
-	   (val-form (pop-form '(boolean))))
+	   (val-form (pop-form '(boolean) :need-variable nil)))
       ;; First pass: compute the arity of both branches
       (multiple-value-bind (else-form else-arg-types else-res-types)
 	  (bst-compile-literal else-literal ())
@@ -326,7 +354,8 @@ FORM, ARGUMENT-TYPES, RESULT-TYPES, and SIDE-EFFECTS-P."
 	    (let ((branch-stack
 		   (nreverse (mapcar #'(lambda (req-type)
 					 (multiple-value-bind (form type)
-					     (pop-form req-type)
+					     (pop-form req-type
+						       :need-variable :if-side-effects)
 					   (make-mvform :form form
 							:types (list type))))
 				     (reverse arg-types)))))
@@ -353,10 +382,30 @@ different net number of values: ~%~A -> ~A vs. ~A"
 			  *form-stack*))))))))))   
 
 (define-bst-special-form "pop$"
-    (pop-form t :need-variable t))
+    (pop-form t :need-variable :if-side-effects))
 
 (define-bst-special-form "skip$"
     nil)
+
+(defun bst-compile-literal-as-while-body (literal)
+  "Compile a BST function LITERAL, which is a symbol, designating a
+BST function, or a list (a function body).  Return five values: a Lisp
+BODY, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P, and FREE-VARIABLES."
+  (let ((*form-stack* ())
+	(*borrowed-variables* ())
+	(*form-bindings* ()))
+    (etypecase literal
+      (symbol (compile-funcall literal))
+      (cons (compile-body literal)))
+    (let ((psetq-args (mapcan (lambda (var)
+				(list (variable-name var)
+				      (pop-form (variable-type var))))
+			      *borrowed-variables*)))
+      (push (make-mvform :form `(psetq ,@psetq-args)
+			 :types (mapcar #'variable-type *borrowed-variables*)
+			 :side-effects-p t)
+	    *form-stack*))
+    (package-as-body)))
 
 (define-bst-special-form "while$"
     (let* ((body-literal (pop-literal))
@@ -364,23 +413,33 @@ different net number of values: ~%~A -> ~A vs. ~A"
       (multiple-value-bind (pred-form pred-arg-types
 				      pred-res-types pred-side-effects-p)
 	  (bst-compile-literal pred-literal ())
-	(multiple-value-bind (body-form body-arg-types
-					body-res-types body-side-effects-p)
-	    (bst-compile-literal body-literal ())
-	  (unless (null pred-arg-types)
-	    (bst-compile-error "PREDICATE function ~S takes stack values: ~S"
-			       pred-literal pred-arg-types))
-	  (unless (and (= (length pred-res-types) 1)
-		       (type= (car pred-res-types) '(boolean)))
-	    (bst-compile-error "PREDICATE function ~S does not deliver exactly one boolean stack value: ~S"
-			       pred-literal pred-res-types))
-	  (unless (and (null body-arg-types) (null body-res-types))
-	    (bst-compile-error "BODY function ~S takes or delivers stack values: ~S --> ~S"
+	(unless (null pred-arg-types)
+	  (bst-compile-error "PREDICATE function ~S takes stack values: ~S"
+			     pred-literal pred-arg-types))
+	(unless (and (= (length pred-res-types) 1)
+		     (type= (car pred-res-types) '(boolean)))
+	  (bst-compile-error "PREDICATE function ~S does not deliver exactly one boolean stack value: ~S"
+			     pred-literal pred-res-types))
+	(multiple-value-bind (body body-arg-types body-res-types
+				   body-side-effects-p free-body-vars)
+	    (bst-compile-literal-as-while-body body-literal)
+	  (unless (= (length body-arg-types) (length body-res-types))
+	    (bst-compile-error "BODY function ~S is not stack-balanced: ~S --> ~S"
 			       body-literal body-arg-types body-res-types))
-	  (push (make-mvform :form `(loop while ,pred-form ,body-form)
-			     :types ()
-			     :side-effects-p (or pred-side-effects-p body-side-effects-p))
-		*form-stack*)))))    
+	  (let ((init-clauses (mapcar (lambda (var type)
+					`(,var ,(pop-form type)))
+				      free-body-vars body-arg-types))
+		(values-body
+		 (case (length body-res-types)
+		   (0 ())
+		   (1 (list (car free-body-vars)))
+		   (2 (list `(values ,@free-body-vars))))))
+	    (push (make-mvform :form `(do ,init-clauses
+				          (,pred-form ,@values-body)
+				       ,@body)
+			       :types body-res-types
+			       :side-effects-p (or pred-side-effects-p body-side-effects-p))
+		  *form-stack*)))))) 
 
 
 ;;;
@@ -392,18 +451,27 @@ different net number of values: ~%~A -> ~A vs. ~A"
 	(let* ((bst-function (get-bst-function function-name))
 	       (arg-types (bst-function-argument-types bst-function))
 	       (arg-forms (nreverse
-			   (mapcar #'pop-form (reverse arg-types))))
+			   (mapcar (lambda (type)
+				     ;; `:need-variable nil' is sufficient
+				     ;; but might want to say :if-side-effects
+				     ;; for aesthetic reasons:
+				     (pop-form type :need-variable nil
+					       ;;:if-side-effects
+					       ))
+				   (reverse arg-types))))
 	       (result-types (bst-function-result-types bst-function)))
 	  (cond
 	    ((bst-function-lisp-form-maker bst-function)
 	     (push (make-mvform :form (apply (bst-function-lisp-form-maker bst-function)
 					     arg-forms)
-				:types result-types)
+				:types result-types
+				:side-effects-p (bst-function-side-effects-p bst-function))
 		   *form-stack*))
 	    (t				; normal function call
 	     (push (make-mvform :form (cons (bst-function-lisp-name bst-function)
 					    arg-forms)
-				:types result-types)
+				:types result-types
+				:side-effects-p (bst-function-side-effects-p bst-function))
 		   *form-stack*)))))))
 
 (defun compile-body (body)
@@ -432,37 +500,27 @@ rather than a defun form.  Return four values: DEFUN-OR-LAMBDA-FORM,
 ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P."
   (let ((*borrowed-variables* ())
 	(*form-bindings* ())
-	(*form-stack* ()))
+	(*form-stack* ())
+	(*bst-gentemp-counter* 0))
     (compile-body function-definition)
     (package-as-procedure name)))
 
 ;;;
 
-#|
-(let ((*borrowed-variables* (list (make-variable :name 'X)))
-      (*form-bindings* (list (make-binding :variables (list (make-variable :name 'Y))
-					   :form '(* X 3))))
-      (*form-stack* (list (make-mvform :form '(+ 1 X Y)))))
-  (pprint 
-   (build-procedure-form 'FOO)))
-
-
-(let (*form-stack* *form-bindings* *borrowed-variables*
-		   (*bst-functions* (builtin-bst-functions)))
-  (bst-compile-body '(1 duplicate$ 2 + -))
-  (pprint (build-procedure-form 'FOO)))
-|#
-
 (defun compile-bst-file (bst-file lisp-file)
   (let ((*bib-macros* (make-hash-table))
 	(*bst-compiling* t))
-;    (with-open-file (*lisp-stream* lisp-file :direction :output)
-    (let ((*lisp-stream* *standard-output*))
+    (with-open-file (*lisp-stream* lisp-file :direction :output)
       (with-open-file (bst-stream bst-file)
+	(format *lisp-stream*
+		";;;; This is a -*- Common-Lisp -*- program, automatically translated~%~
+;;;; from the BibTeX style file `~A'~%~
+;;;; by the CL-BibTeX compiler ($Revision: 1.4 $).~%"
+		bst-file)
 	(get-bst-commands-and-process bst-stream)))))
 
 #|
-(compile-bst-file (kpathsea:find-file "amsalpha.bst")
+(compile-bst-file (kpathsea:find-file "amsalpha-xx.bst")
 		  "/tmp/compiled-bst.lisp")
 
 |#

@@ -261,7 +261,8 @@
 (register-bst-primitive "text.prefix$" '((string) (integer)) '((string)) 'bibtex-string-prefix)
 
 (define-bst-primitive "top$" ((object t)) ()
-  :interpreted (format *error-output* "~A~%" object))
+  :interpreted (format *error-output* "~A~%" object)
+  :compiled (progn nil))
 
 (define-bst-primitive "type$" () ((string))
   :interpreted (string-downcase (gethash "entry-type" *bib-entry* ""))
@@ -383,6 +384,17 @@ program.")
 	 (*read-seen-p* nil)
 	 (*literal-stack* nil))
     (loop
+     (when (and *bst-compiling*
+		(char= (peek-char t *bst-stream* nil #\x) #\%))
+       ;; Copy top-level comments; replace N leading % signs with N+1 semicola
+       (terpri *lisp-stream*)
+       (loop while (char= (peek-char t *bst-stream* nil #\x) #\%)
+	     do
+	     (princ ";" *lisp-stream*)
+	     (loop while (char= (peek-char nil *bst-stream* nil #\x) #\%)
+		   do (read-char *bst-stream*) (princ ";" *lisp-stream*))
+	     (princ (read-line *bst-stream* nil "") *lisp-stream*)
+	     (terpri *lisp-stream*)))
      (let ((command (bst-read :eof-ok t)))
        ;;(format t "Processing ~A command~%" command)
        (case command
@@ -474,6 +486,9 @@ signal an error and don't return."
 		(multiple-value-bind (defun-form argument-types
 					 result-types side-effects-p)
 		    (bst-compile-defun lisp-name function-definition)
+		  (format *lisp-stream*
+			  "~%;; ~S --> ~S ~:[~;with side-effects~]"
+			  argument-types result-types side-effects-p)
 		  (lisp-write defun-form)
 		  (setf (gethash (string bst-name) *bst-functions*)
 			(make-bst-function :name (string bst-name)

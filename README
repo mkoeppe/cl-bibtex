@@ -1,0 +1,26 @@
+Where to start
+==============
+
+Compile and load all Lisp files.
+
+The function BIBTEX is like the bibtex program.  Pass the file name
+STEM; BIBTEX will read STEM.aux, interpret a BST file, and write
+STEM.bbl.
+
+The package BIBTEX-RUNTIME contains useful routines for reading AUX
+files, formatting names, etc.
+
+You can invoke a preliminary BST-to-Common-Lisp compiler with the
+function COMPILE-BST-FILE:
+
+	 (compile-bst-file (kpathsea:find-file "amsalpha.bst")
+		  "/tmp/compiled-bst.lisp")
+
+The resulting Lisp file is meant to be a readable Common Lisp version
+of the BST file, which can be run on the AUX file to produce a BBL
+file, without using the BST interpreter.
+
+The generated code currently does not run, though.
+
+
+ -- Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>
