@@ -1,4 +1,4 @@
-;;; A BibTeX re-implementation in Common Lisp - the BST interpreter
+;;; A BibTeX re-implementation in Common Lisp - the BST file reader
 ;;; Copr. 2001, 2002 Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>
 ;;; This is free software, licensed under GNU GPL (see file COPYING)
 
