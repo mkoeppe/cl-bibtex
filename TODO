@@ -5,6 +5,7 @@ To do:
   custom-bib system (merlin.mbs) may serve as a good datapoint.
 * Add a test suite, consisting of database files and BibTeX style files,
   for testing the correctness of cl-bibtex
+* Add BibTeX's output line breaking mechanism (but make it optional).
 * From Drew McDermott: 
   In bibtex.system, I changed references to your directory to my
   directories; there really should be some global vars to handle this.
