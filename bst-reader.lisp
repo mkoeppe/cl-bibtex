@@ -16,9 +16,10 @@
 			     (let ((sym (read stream nil nil t)))
 			       (unless (symbolp sym)
 				 (error "Bad syntax"))
-			       (intern
-				(string-upcase 
-				 (concatenate 'string ":" (symbol-name sym)))))))
+			       (values 
+				(intern
+				 (string-upcase 
+				  (concatenate 'string ":" (symbol-name sym))))))))
 			       
     ;; function lists
     (set-macro-character #\{
@@ -156,10 +157,11 @@
 	   name-list))
   (dolist (bst-name name-list)
     (check-for-already-defined-function bst-name)
-    (let ((lisp-name (bst-name-to-lisp-name bst-name)))
+    (let* ((lexical (member bst-name *lexicals* :test 'string-equal))
+	   (lisp-name (bst-name-to-lisp-name bst-name
+					     (if lexical :lexical :variable))))
       (register-bst-global-var bst-name lisp-name 'int-global-var '(integer) 0 *bst-functions*)
-      (when (and *bst-compiling*
-		 (not (member bst-name *lexicals* :test 'string-equal)))
+      (when (and *bst-compiling* (not lexical))
 	(lisp-write `(defvar ,lisp-name 0))))))
 
 (define-bst-command "ITERATE" (function-list)
@@ -171,7 +173,7 @@
   (let* ((name (car function-list))
 	 (function (get-bst-function-of-type name '(built-in wiz-defined compiled-wiz-defined))))
     (if *bst-compiling*
-	(push `(dolist (*bib-entry* bib-entries)
+	(push `(dolist (*bib-entry* ,*bib-entries-symbol*)
 		 ,(bst-compile-thunkcall name))
 	      *main-lisp-body*)
       (dolist (*bib-entry* *bib-entries*)
@@ -208,7 +210,9 @@
     (error "Illegal, read command before entry command"))
   (setq *read-seen-p* t)
   (if *bst-compiling*
-      (push `(setq bib-entries (read-all-bib-files-and-compute-bib-entries)) *main-lisp-body*)
+      (push `(setq ,*bib-entries-symbol*
+	      (read-all-bib-files-and-compute-bib-entries))
+	    *main-lisp-body*)
       (setq *bib-entries* (read-all-bib-files-and-compute-bib-entries))))
 
 (define-bst-command "REVERSE" (function-list)
@@ -221,7 +225,7 @@
 	 (function (get-bst-function-of-type name '(built-in wiz-defined compiled-wiz-defined))))
 	
     (if *bst-compiling*
-	(push `(dolist (*bib-entry* (reverse bib-entries))
+	(push `(dolist (*bib-entry* (reverse ,*bib-entries-symbol*))
 		,(bst-compile-thunkcall name))
 	      *main-lisp-body*)
 	(dolist (*bib-entry* (reverse *bib-entries*))
@@ -231,9 +235,10 @@
   (unless *read-seen-p*
     (error "Illegal, sort command before read command"))
   (if *bst-compiling*
-      (push `(setq bib-entries
-	      (stable-sort bib-entries 'string<=
-	       :key (lambda (entry) (gethash "SORT.KEY$" entry ""))))
+      (push `(setq ,*bib-entries-symbol*
+	      (stable-sort ,*bib-entries-symbol* 'string<=
+	       :key (lambda (,(intern "ENTRY"))
+		      (gethash "SORT.KEY$" ,(intern "ENTRY") ""))))
 	    *main-lisp-body*)
       (setq *bib-entries*
 	    (stable-sort *bib-entries* 'string<=
@@ -245,10 +250,11 @@
 	   name-list))
   (dolist (bst-name name-list)
     (check-for-already-defined-function bst-name)
-    (let ((lisp-name (bst-name-to-lisp-name bst-name)))
+    (let* ((lexical (member bst-name *lexicals* :test 'string-equal))
+	   (lisp-name (bst-name-to-lisp-name bst-name
+					     (if lexical :lexical :variable))))
       (register-bst-global-var bst-name lisp-name 'str-global-var '(string) "" *bst-functions*)
-      (when (and *bst-compiling*
-		 (not (member bst-name *lexicals* :test 'string-equal)))
+      (when (and *bst-compiling* (not lexical))
 	(lisp-write `(defvar ,lisp-name ""))))))
 
 
