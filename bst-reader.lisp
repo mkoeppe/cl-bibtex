@@ -145,7 +145,9 @@
   (let* ((name (car function-list))
 	 (function (get-bst-function-of-type name '(built-in wiz-defined compiled-wiz-defined))))
     (if *bst-compiling*
-	(push (bst-compile-thunkcall name) *main-lisp-body*)
+	(progn 
+	  (push (bst-compile-thunkcall name) *main-lisp-body*)
+	  (push function *bst-function-call-sequence*))
       (bst-execute function))))
 
 (define-bst-command "FUNCTION" (function-list function-definition)
@@ -187,9 +189,11 @@
   (let* ((name (car function-list))
 	 (function (get-bst-function-of-type name '(built-in wiz-defined compiled-wiz-defined))))
     (if *bst-compiling*
-	(push `(dolist (*bib-entry* ,*bib-entries-symbol*)
-		 ,(bst-compile-thunkcall name))
-	      *main-lisp-body*)
+	(progn 
+	  (push `(dolist (*bib-entry* ,*bib-entries-symbol*)
+		  ,(bst-compile-thunkcall name))
+		*main-lisp-body*)
+	  (push function *bst-function-call-sequence*))
       (dolist (*bib-entry* *bib-entries*)
 	(bst-execute function)))))
 
@@ -239,9 +243,11 @@
 	 (function (get-bst-function-of-type name '(built-in wiz-defined compiled-wiz-defined))))
 	
     (if *bst-compiling*
-	(push `(dolist (*bib-entry* (reverse ,*bib-entries-symbol*))
-		,(bst-compile-thunkcall name))
-	      *main-lisp-body*)
+	(progn
+	  (push `(dolist (*bib-entry* (reverse ,*bib-entries-symbol*))
+		  ,(bst-compile-thunkcall name))
+		*main-lisp-body*)
+	  (push function *bst-function-call-sequence*))
 	(dolist (*bib-entry* (reverse *bib-entries*))
 	  (bst-execute function)))))
 
