@@ -7,7 +7,11 @@
 (register-bst-primitive ">" '((integer) (integer)) '((boolean)) '>)
 (register-bst-primitive "<" '((integer) (integer)) '((boolean)) '<)
 (register-bst-primitive "=" '(t t) '((boolean)) 'equal)
-(register-bst-primitive "+" '((integer) (integer)) '((integer)) '+)
+
+(define-bst-primitive "+" ((a (integer)) (b (integer))) ((integer))
+  :interpreted (+ a b)
+  :compiled (build-associative-form `(+) a b))
+
 (register-bst-primitive "-" '((integer) (integer)) '((integer)) '-)
 
 (define-bst-primitive "*" ((a (string)) (b (string))) ((string))
@@ -47,7 +51,8 @@
 	  (funcall (cdr ,type/fun-sym))
 	  (,(bst-name-to-lisp-name "default.type" :function))))))
 
-(define-bst-primitive "change.case$" ((string (string)) (spec (string))) ((string))
+(define-bst-primitive "change.case$" ((string (string))
+				      (spec (string) :need-variable t)) ((string))
   :interpreted
   (cond
     ((string-equal spec "t") (bibtex-string-titledowncase string))
@@ -73,7 +78,7 @@
 	(t (bib-warn "~S is an illegal case-conversion string" ,spec)
 	 ,string))))
 
-(define-bst-primitive "chr.to.int$" ((s (string))) ((integer))
+(define-bst-primitive "chr.to.int$" ((s (string) :need-variable t)) ((integer))
   :interpreted (cond
 		 ((= (length s) 1)
 		  (char-code (char s 0)))
@@ -84,10 +89,9 @@
 		(if (= (length s) 1)
 		    `(char-code ,(char s 0))
 		    0)
-		`(let ((str ,s))
-		  (if (= (length str) 1)
-		      (char-code (char str 0))
-		      0))))
+		`(if (= (length ,s) 1)
+		     (char-code (char ,s 0))
+		     0)))
 
 (define-bst-primitive "cite$" () ((string))
   :interpreted (gethash "KEY" *bib-entry* "")
