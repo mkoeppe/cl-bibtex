@@ -36,7 +36,7 @@
     (unless file-stem
       (error "Need exactly one file argument"))
     (format *error-output*
-	    "This is CL-BibTeX, Version ~A" bibtex-compiler:+version+)
+	    "This is CL-BibTeX, Version ~A" bibtex-compiler::+version+)
     (bibtex-compiler:bibtex file-stem)))
 
 (defun emulate-bibtex (argv)
