@@ -10,6 +10,7 @@
 ;;   it lexical in *all* functions.  This requires a second compiler pass.
 ;; * maybe name formal arguments "STRING1", "INT1", ..., depending on type?
 ;; * maybe replace dots with dashes in function names
+;; * maybe put stars around special variables names
 ;; * don't name the temporary variables occuring in while$ "ARGnn"
 ;; * propagate types when they get more specific:
 ;;   { $duplicate + } is of type (INTEGER) -> (INTEGER), not T -> (INTEGER)
