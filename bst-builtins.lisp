@@ -135,8 +135,8 @@
   :compiled `(null ,object))
   
 (define-bst-primitive "newline$" () ()
-  :interpreted (terpri *bbl-output*)
-  :compiled `(terpri *bbl-output*)
+  :interpreted (bbl-terpri)
+  :compiled `(bbl-terpri)
   :side-effects-p t)
 
 (register-bst-primitive "num.names$" '((string)) '((integer)) 'num-bibtex-names)
@@ -217,8 +217,8 @@
 (register-bst-primitive "width$" '((string)) '((integer)) 'bibtex-string-width)
 
 (define-bst-primitive "write$" ((s (string))) ()
-  :interpreted (princ s *bbl-output*)
-  :compiled `(princ ,s *bbl-output*)
+  :interpreted (bbl-print s)
+  :compiled `(bbl-print ,s)
   :side-effects-p t)
 
 ;;; The following three functions are not defined in the original
