@@ -47,7 +47,7 @@ Status
 Alpha.  The system already has:
 
  * A reader for BibTeX style files (.bst),
- * a reader for bibliography databases (.bib),
+ * a reader and a writer for bibliography databases (.bib),
  * a reader for .aux files,
  * an implementation of BibTeX's built-in functions (like for parsing and
    formatting names, etc.)
@@ -67,30 +67,45 @@ The function BIBTEX is like the bibtex program.  Pass the file name
 STEM; BIBTEX will read STEM.aux, interpret a BST file, and write
 STEM.bbl:
 
-	(bibtex "ibm-theory")
+	(bibtex-compiler:bibtex "ibm-theory")
 
-The package BIBTEX-RUNTIME contains useful routines for reading AUX
-files, formatting names, etc.
+In fact, when the STEM.aux file requests a bibliography style, BIBTEX
+first looks whether a Lisp function that implements the style has been
+defined using DEFINE-BIBTEX-STYLE.  Otherwise, it tries to find (using
+kpathsearch) and load a Lisp file named "STYLE.lbst"; it is supposed
+to define the style using DEFINE-BIBTEX-STYLE.  Finally, BIBTEX tries
+to find "STYLE.bst" and interpret it.
 
-You can invoke a preliminary BST-to-Common-Lisp compiler with the
-function COMPILE-BST-FILE:
+A BibTeX style implemented in Lisp is supposed to read all
+bibliography files in *BIB-FILES* and to write the formatted
+bibliography to the stream *BBL-OUTPUT*.  The package BIBTEX-RUNTIME
+contains useful routines for reading AUX files, formatting names, etc.
+An important function is READ-ALL-BIB-FILES-AND-COMPUTE-BIB-ENTRIES.  
 
-	(compile-bst-file (kpathsea:find-file "amsalpha.bst")
-		          "/tmp/compiled-bst.lisp")
+You can invoke the BST-to-Common-Lisp compiler with the function
+COMPILE-BST-FILE:
+
+	(bibtex-compiler:compile-bst-file (kpathsea:find-file "amsalpha.bst")
+					  "amsalpha.lbst")
 
 Slightly better results can be obtained by:
 
-        (let ((*lexicals* '("NUMNAMES" "NAMESLEFT" "NAMEPTR" 
-                            "S" "T" "LEN" "MULTIRESULT")))
-          (compile-bst-file (kpathsea:find-file "amsalpha.bst")
-		            "/tmp/compiled-bst.lisp"))
+        (let ((bibtex-compiler::*lexicals* 
+	       '("NUMNAMES" "NAMESLEFT" "NAMEPTR" "S" "T" "LEN" "MULTIRESULT")))
+          (bibtex-compiler:compile-bst-file (kpathsea:find-file "amsalpha.bst")
+					    "amsalpha.lbst"))
 
 The resulting Lisp file is a readable Common Lisp version of the BST
 file, which can be run on the AUX file to produce a BBL file, without
 using the BST interpreter:
 
-        (load "/tmp/compiled-bst.lisp" :if-source-newer :compile)
-	(cl-bibtex "ibm-theory" 'amsalpha)
+        (load "amsalpha.lbst" 
+              :if-source-newer :compile)            ; calls DEFINE-BIBTEX-STYLE
+
+	(bibtex-compiler:bibtex "ibm-theory")	    ; now uses the Lisp style
+
+There is also a little shell script "bibtex" for invoking CL-BIBTEX
+from the shell; it uses the "run-lisp" script from CLOCC.
 
 
 Restrictions of the compiler
@@ -111,18 +126,29 @@ their types (BOOLEAN, INTEGER, STRING).
 
 * The body of a WHILE$ function must be neutral on the stack (as a
   special exception, the type of WHILE$ body occurring in the
-  FORMAT.NAMES function of the standard styles is also supported.  The
+  FORMAT.NAMES function of the standard styles is also supported).  The
   predicate must deliver exactly one boolean value.
 
 
 Implementation dependencies
 ===========================
 
-It does not run on SBCL because it does not like (COPY-READTABLE NIL).
+It does not run on some 0.7.? version of SBCL because it does not like
+(COPY-READTABLE NIL).  SBCL 0.7.9 seems to be fine.
 
 I noticed that CMUCL 3.0.8 18c+ does not like (PEEK-CHAR T STREAM NIL
 #\Space); it won't skip over whitespace when the EOF character is
-whitespace?
+whitespace?  (I don't use this any more in CL-BibTeX.)
+
+CLISP 2.30:
+1. While compiling bibtex-compiler.lisp, complains:
+   (SETF FIND-CLASS)(VARIABLE): #<PACKAGE COMMON-LISP> is locked
+2. When I invoke COMPILE-BST-FILE, CLISP says "Lisp stack
+   overflow. RESET"; this seems to be caused by the pprint-dispatch
+   function for DEFINE-BIBTEX-STYLE.
+3. The format directive ~<...~:>  (logical block) does not seem to work
+   properly.
+
 
 
  -- Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>

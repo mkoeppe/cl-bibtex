@@ -3,3 +3,4 @@
 *.lib
 *.sparcf
 *.err
+*.fasl

@@ -11,7 +11,7 @@
   (:export "*BIB-MACROS*" "*BIB-DATABASE*" "*BIB-ENTRIES*"
 	   "*BIB-ENTRY*" "*BIB-PREAMBLE*" "*BIB-STYLE*"
 	   "*BIB-FILES*" "*CITE-ALL-ENTRIES*" "*CITE-KEYS*"
-	   "*BIB-ENTRY-TYPE-FUNCTIONS*"
+	   "*BIB-ENTRY-TYPE-FUNCTIONS*" #:*min-crossrefs*
 	   "READ-AUX-FILE" "READ-BIB-DATABASE" "CITED-BIB-ENTRIES"
 	   "WRITE-BIB-ENTRY"
 	   "READ-ALL-BIB-FILES-AND-COMPUTE-BIB-ENTRIES"
@@ -32,4 +32,6 @@
 
 (defpackage :bibtex-compiler
   (:use :common-lisp :bibtex-runtime)
-  (:export "COMPILE-BST-FILE" "BIBTEX" "CL-BIBTEX"))
+  (:export #:compile-bst-file #:bibtex
+	   #:*bibtex-styles* #:*allow-load-lisp-bibtex-style*
+	   #:register-bibtex-style #:define-bibtex-style #:find-bibtex-style))
