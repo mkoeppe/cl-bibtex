@@ -16,7 +16,8 @@
 
 (defun mark-history (level)
   (cond ((> level *history*)
-	 (setq *history* level))
+	 (setq *history* level
+	       *err-count* 1))
 	((= level *history*)
 	 (incf *err-count*))))
 
@@ -211,9 +212,23 @@ non-nil, remove any leading or trailing whitespace."
       (bib-error "Expected `~A' sign" close-char))))
 
 (defun process-bib-preamble-command ()
-  (setf *bib-preamble*
-	(concatenate 'string *bib-preamble* 
-		     (read-bib-field-value nil))))
+  (let* ((open-char (peek-char t *bib-stream*))
+	 (close-char
+	  (case open-char
+	    (#\{ #\})
+	    (#\( #\))
+	    (otherwise "Expected a `(' or `{' sign"))))
+    (read-char *bib-stream*)
+    (setf *bib-preamble*
+	  (concatenate 'string *bib-preamble* 
+		       (read-bib-field-value nil)))
+    (unless (char= (peek-char t *bib-stream*)
+		   close-char)
+      (bib-error "Expected `~A' sign" close-char))))
+
+
+(defun make-bib-entry ()
+  (make-hash-table :size 16 :test 'equalp))
 
 (defun process-bib-entry-command (entry-type)
   (let* ((open-char (peek-char t *bib-stream*))
@@ -234,7 +249,7 @@ non-nil, remove any leading or trailing whitespace."
     (unless (char= (peek-char t *bib-stream*) #\,)
       (bib-error "Expected `,' character"))
     (read-char *bib-stream*)
-    (let ((entry (make-hash-table :size 16 :test 'equalp)))
+    (let ((entry (make-bib-entry)))
       (setf (gethash "entry-type" entry) (string-downcase entry-type))
       (setf (gethash "key" entry) key) 
       (loop (multiple-value-bind (name value)
@@ -267,13 +282,24 @@ non-nil, remove any leading or trailing whitespace."
 	do (format stream ",~%  ~A = {~A}" field value))
   (format stream "~%}~%"))
 
-#|
+#||
 (write-bib-entry (gethash "Corput" *bib-database*))
 (loop for entry being each hash-value in *bib-database* do
-      (write-bib-entry entry))
-|#
+      (write-bib-entry entry)) ||#
 
 ;;; Computing the cited entries
+
+(defun merge-bib-entries (a b)
+  "Return a fresh bib entry that merges A and B."
+  (let ((entry (make-bib-entry)))
+    (loop for key being each hash-key in a
+	  and value being each hash-value in a
+	  do (setf (gethash key entry) value))
+    (loop for key being each hash-key in b
+	  and value being each hash-value in b
+	  do (unless (gethash key entry)
+	       (setf (gethash key entry) value)))
+    entry))
 
 (defun cited-bib-entries (cite-keys &key
 			  (min-crossrefs 2))
@@ -282,26 +308,66 @@ given in the list CITE-KEYS (if CITE-KEYS is the symbol T, return a
 vector of all database entries.  When a crossref'd entry is referenced
 at least :MIN-CROSSREFS times, it is included as a separate entry as
 well."
-  (declare (ignore min-crossrefs))
   (let ((bib-entries (make-array 0 :adjustable t :fill-pointer 0)))
     (cond
       ((eql cite-keys t)
        (loop for entry being each hash-value in *bib-database*
 	     do (vector-push-extend entry bib-entries)))
       (t
-       (dolist (key cite-keys)
-	 (let ((entry (gethash key *bib-database*)))
-	   (if entry
-	       (vector-push-extend entry bib-entries)
-	       (bib-warn "I didn't find a database entry for ~A"
-			  key))))
-       ;; do the crossrefs
-;;       (loop for index from 0 below (length bib-entries)
-;;             do (let* ((entry (aref entries index))
-;;                       (crossref (gethash 'crossref entry)))
-;;                  (when crossref
-;;                    (let ((cross-entry (
-		      ))
+       (let ((crossref-hash (make-hash-table :test 'equalp))
+	     (processed-keys '()))
+	 ;; count how many times entries are cross-referenced
+	 (labels ((count-crossrefs (key)
+		    (unless (member key processed-keys :test 'string-equal)
+		      (push key processed-keys)
+		      (let ((entry (gethash key *bib-database*)))
+			(when entry	; we will issue a warning
+					; for non-existing keys later 
+			  (let ((crossref (gethash "CROSSREF" entry)))
+			    (when (and crossref
+				       (not (member crossref cite-keys
+						    :test 'string-equal)))
+			      (setf (gethash crossref crossref-hash)
+				    (+ 1 (gethash crossref crossref-hash 0)))
+			      (count-crossrefs crossref))))))))
+	   (dolist (key cite-keys)
+	     (count-crossrefs key)))
+	 (labels ((get-entry (key parent-keys)
+		    (let ((entry (gethash key *bib-database*)))
+		      (cond
+			((not entry)
+			 (bib-warn "I didn't find a database entry for ~A"
+				   key)
+			 nil)
+			(t
+			 (let ((crossref (gethash "CROSSREF" entry)))
+			   (cond
+			     ((not crossref)
+			      entry)
+			     ((member crossref parent-keys :test 'string-equal)
+			      ;; circular cross reference
+			      (bib-warn "I detected a circular cross-reference to ~A"
+					crossref)
+			      nil)
+			     ((>= (gethash crossref crossref-hash 0)
+				  min-crossrefs)
+			      entry)
+			     (t
+			      (let ((crossref-entry
+				     (get-entry crossref (cons key  parent-keys))))
+				(if crossref-entry
+				    (merge-bib-entries entry crossref-entry)
+				    entry))))))))))
+	   (dolist (key cite-keys)
+	     (let ((entry (get-entry key '())))
+	       (when entry
+		 (vector-push-extend entry bib-entries))))
+	   (loop for key being each hash-key in crossref-hash
+		 and count being each hash-value in crossref-hash
+		 when (>= count min-crossrefs)
+		 do (let ((entry (get-entry key '())))
+		      (when entry
+			(vector-push-extend entry bib-entries))))))))
     (coerce bib-entries 'list)))
 
 ;;; BibTeX names
@@ -652,7 +718,7 @@ the BibTeX-style FORMAT-STRING."
   '(("citation" . aux-citation-command)
     ("bibdata" . aux-bibdata-command)
     ("bibstyle" . aux-bibstyle-command)
-    ("@@input" . aux-input-command)))
+    ("@input" . aux-input-command)))
 
 ;; Variables used during READ-AUX-FILE
 (defvar *citation-seen-p* nil "Non-nil if a \citation command has been seen in an AUX file.")
@@ -673,18 +739,23 @@ the BibTeX-style FORMAT-STRING."
   
   (mark-error)
   (throw 'aux-error nil))
-  
-(defun read-tex-control-sequence (stream &key (skip-whitespace t))
+
+(defun tex-alpha-char-p (char &key (at-is-letter nil))
+  (or (alpha-char-p char)
+      (and at-is-letter (char= char #\@))))
+
+(defun read-tex-control-sequence (stream &key (skip-whitespace t)
+				  (at-is-letter nil))
   "Read a TeX control sequence from STREAM, assuming that the escape
 character (\\) has already been read.  In the case of a control word,
 trailing whitespace is flushed if :SKIP-WHITESPACE is non-nil."
   (let ((char (read-char stream nil #\Space)))
-    (if (alpha-char-p char)
+    (if (tex-alpha-char-p char :at-is-letter at-is-letter)
 	(let ((result (make-array 1 :element-type 'character
 				  :fill-pointer t :adjustable t
 				  :initial-element char)))
 	  (loop for char = (peek-char nil stream nil #\Space)
-		while (alpha-char-p char)
+		while (tex-alpha-char-p char :at-is-letter at-is-letter)
 		do (vector-push-extend (read-char stream) result))
 	  (when skip-whitespace
 	    (peek-char t stream nil nil))
@@ -694,7 +765,9 @@ trailing whitespace is flushed if :SKIP-WHITESPACE is non-nil."
 (defun get-aux-command-and-process ()
   "Read a TeX control sequence from *AUX-STREAM*.  If the sequence is
 found in *AUX-FILE-COMMANDS*, call the associated function."
-  (let* ((ctl (read-tex-control-sequence *aux-stream* :skip-whitespace nil))
+  (let* ((ctl (read-tex-control-sequence *aux-stream*
+					 :skip-whitespace nil
+					 :at-is-letter t))
 	 (command (assoc ctl *aux-file-commands* :test 'string=)))
     (when command
       (if (catch 'aux-error
@@ -743,7 +816,7 @@ found in *AUX-FILE-COMMANDS*, call the associated function."
 	*cite-keys* (nreverse *cite-keys*))))
   
 (defun aux-input-command ()
-  "Process an AUX-file \\@@input command."
+  "Process an AUX-file \\@input command."
   (unless (char= (read-char *aux-stream* nil #\Space) #\{)
     (aux-error "Expected `{'"))
   (let ((file-name (scan-balanced-braces *aux-stream* #\})))
@@ -803,6 +876,10 @@ the delimiter, which is left in the stream."
  
 ;;;
 
+(defvar *min-crossrefs* 2 "When a crossref'd entry is referenced at
+least *MIN-CROSSREFS* times, it is included as a separate entry as
+well.")
+
 (defun read-all-bib-files-and-compute-bib-entries ()
   (dolist (file *bib-files*)
     (let ((expanded-file (kpathsea:find-file (concatenate 'string file ".bib"))))
@@ -813,7 +890,7 @@ the delimiter, which is left in the stream."
 	  (format *error-output* "I couldn't open database file `~A'" expanded-file))
 	(read-bib-database s))))
   (cited-bib-entries (if *cite-all-entries* t *cite-keys*)
-		     :min-crossrefs 2))
+		     :min-crossrefs *min-crossrefs*))
 
 ;;; Misc functions
 
@@ -844,14 +921,6 @@ mark."
     (t
      (subseq s (max 0 (- (length s) (- start) (- count 1)))
 	     (+ (length s) start 1)))))
-
-(defun bibtex-string-purify (string)
-  "Remove nonalphanumeric characters except for whitespace and
-sep-char characters (these get converted to a space) and removes
-certain alphabetic characters contained in the control sequences
-associated with a special character."
-  ;; FIXME:
-  string)
 
 (defun read-tex-group (stream)
   "Read TeX tokens from STREAM until a `}' character or end-of-file is
@@ -886,7 +955,67 @@ control sequences or sub-lists representing groups."
 			   (not (alpha-char-p (char token 0))))
 		(princ " " stream))))))
 
-;;(write-tex-group (parse-tex-string "\\abc{\\.ef}"))
+(defun for-all-tex-tokens (function string-or-group)
+  "Call FUNCTION for every token in the given TeX string (a string or
+a TeX-group).  The second argument passed to FUNCTION is the
+bracelevel."
+  (let ((group (etypecase string-or-group
+		 (string (parse-tex-string string-or-group))
+		 (list string-or-group))))
+    (labels ((apply-function (group brace-level)
+	       (dolist (token group)
+		 (etypecase token
+		   ((or character string)
+		    (funcall function token brace-level))
+		   (list
+		    (apply-function token (+ 1 brace-level)))))))
+      (apply-function group 0))))		 
+
+(defmacro do-tex-tokens ((token string-or-group
+				&optional (brace-level (gensym) brace-level-p))
+			 &body body)
+  "Perform BODY on every token in the given TeX string (a string or a
+TeX-group)."
+  `(for-all-tex-tokens (lambda (,token ,brace-level)
+			 ,@(if brace-level-p
+			       '()
+			       `((declare (ignore ,brace-level))))
+			 ,@body)
+    ,string-or-group))
+
+(defvar *foreign-character-purifications*
+  '(("i" . "i")
+    ("j" . "j")
+    ("ae" . "ae")
+    ("AE" . "AE")
+    ("oe" . "oe")
+    ("OE" . "OE")
+    ("aa" . "a")
+    ("AA" . "A")
+    ("o" . "o")
+    ("O" . "O")
+    ("l" . "l")
+    ("L" . "L")
+    ("ss" . "ss"))
+  "An alist mapping the names of control sequences to strings, which
+are their purifications.  All other control sequences have null
+purification.")
+
+(defun bibtex-string-purify (string)
+  "Remove nonalphanumeric characters except for whitespace and
+sep-char characters (these get converted to a space) and removes
+certain alphabetic characters contained in the control sequences
+associated with a special character."
+  (with-output-to-string (s)
+    (do-tex-tokens (token string)
+      (etypecase token
+	(character
+	 (cond ((alphanumericp token) (princ token s))
+	       ((sepchar-p token) (princ #\Space s))))
+	(string
+	 (let ((purification (assoc token *foreign-character-purifications* :test 'string=)))
+	   (when purification
+	     (princ (cdr purification) s))))))))
 
 (defun tex-group-upcase (group)
   (mapcar (lambda (token)
@@ -933,7 +1062,7 @@ control sequences or sub-lists representing groups."
 		(t (setq colon-state nil)
 		   token)))
 	    group)))
-				      
+
 (defun bibtex-string-titledowncase (string)
   "Convert to lower case all letters except the very first character
 in the STRING, which it leaves alone, and except the first character
@@ -944,6 +1073,10 @@ alone.  Only those letters at brace-level 0 are affected."
 		     s)))
 
 (defun bibtex-string-prefix (string num-tokens)
+  "The BibTeX TEXT.PREFIX$ function."
+  ;; Takes the first NUM-TOKENS characters (in same way as
+  ;; TEXT.LENGTH$ counts the length of a string) and cuts off the
+  ;; string after them.  If unclosed braces remain, close them.
   (let ((group (parse-tex-string string)))
     (with-output-to-string (s)
       (write-tex-group 
@@ -969,23 +1102,37 @@ alone.  Only those letters at brace-level 0 are affected."
     (#\n . 556) (#\o . 500) (#\p . 556) (#\q . 528) (#\r . 392) (#\s . 394)
     (#\t . 389) (#\u . 556) (#\v . 528) (#\w . 722) (#\x . 528) (#\y . 528)
     (#\z . 444) (#\{ . 500) (#\| . 1000) (#\} . 500) (#\~ . 500)
-    (("ss") . 500) (("ae") . 722) (("oe") . 778) (("AE") . 903) (("OE") . 1014))
+    ("ss" . 500) ("ae" . 722) ("oe" . 778) ("AE" . 903) ("OE" . 1014))
   "An alist associating characters with their widths.  The widths here
 are taken from Stanford's June '87 cmr10 font and represent hundredths
 of a point (rounded), but since they're used only for relative
 comparisons, the units have no meaning.")
 
 (defun bibtex-string-width (string &key (widths +cmr10-character-widths+))
-  "Compute the approximate width of STRING by summing the WIDTHS of the
+  "The BibTeX WIDTH$ function.
+Compute the approximate width of STRING by summing the WIDTHS of the
 individual characters.  BibTeX special characters are handled
 specially."
-  ;; FIXME: Handle special chars
-  (loop for char across string
-	as assoc = (assoc char widths)
-	when assoc
-	sum (cdr assoc)))
+  ;; The original BibTeX handles special chars like this: WIDTH$ sums
+  ;; up the widths of all characters, including braces.  Special
+  ;; characters (backslash on bracelevel 1, followed by a control word
+  ;; or a control char) are handled like this: The widths of \ss, \ae,
+  ;; \oe, \AE, \OE are taken from the table; otherwise the width of
+  ;; the first letter of the control sequence is taken.
+  (let ((width 0))
+    (do-tex-tokens (token string)
+      (let ((assoc (assoc token widths :test 'equal)))
+	(cond
+	  (assoc
+	   (incf width (cdr assoc)))
+	  ((stringp token)
+	   (unless (string= token "")
+	     (let ((assoc (assoc (char token 0) widths)))
+	       (when assoc
+		 (incf width (cdr assoc)))))))))
+    width))
   
-#|
+#||
 
 (setq *bib-macros* (make-hash-table))
 (setq *bib-database* (make-hash-table :test #'equalp))
@@ -1019,4 +1166,4 @@ specially."
 
 (parse-bibtex-name-list '())
 
-|#
+||#
