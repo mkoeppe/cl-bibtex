@@ -83,7 +83,7 @@
 		 ((= (length s) 1)
 		  (char-code (char s 0)))
 		 (t
-		  (bib-warn "String ~S is not a one-character string")
+		  (bib-warn "String ~S is not a one-character string" s)
 		  0))
   :compiled (if (stringp s)
 		(if (= (length s) 1)
