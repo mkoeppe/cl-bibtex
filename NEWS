@@ -1,5 +1,40 @@
 An -*- outline -*- of the new features in CL-BibTeX
 
+* News in version 0.3.2 (not yet released)
+
+** The compiler now deals with WHILE$ loops with complicated data flow.
+
+   The predicate function can now pass values to the body function on
+   the stack.
+
+** The compiler now makes some variables constant.
+
+** The compiler now tries to deal with slightly broken style files.
+
+   Many BibTeX style files are slightly broken in a way such that the
+   stack becomes corrupted in some corner cases.  The compiler cannot
+   analyze those functions completely.  
+
+   Now, instead of giving up, the compiler tries to fix the bad stack.
+   This results in Lisp files that contain calls to ERROR.  If the
+   compiler guesses right, the generated Lisp program will work as
+   well as the original style file; but when one of the broken corner
+   cases occurs, a run-time error will be signaled.
+
+** Bug fixes:
+
+*** A bug regarding functions that return multiple values has been fixed.
+
+    The bug showed up when compiling certain style files generated
+    with the custom-bib system (merlin.mbs).  The compiler erroneously
+    complained about an IF$ form with bad stack balance.
+
+*** The compiler now coerces booleans to integers in assignments.
+
+* News in version 0.3.1
+
+  This is a bug-fix release.
+
 * News in version 0.3
 
 ** The compiler now supports BibTeX macros (named strings).

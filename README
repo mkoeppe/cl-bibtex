@@ -115,12 +115,28 @@ their types (BOOLEAN, INTEGER, STRING).
   (In other words, you can't define higher-order BST functions.)
 
 * The two branches of an IF$ function must deliver the same net number
-  of values.
+  of values.  (As a special exception, the type of IF$ within a WHILE$
+  body which occurs in the FORMAT.NAMES function of the standard
+  styles is also supported.  This is reported with a warning message.)
 
-* The body of a WHILE$ function must be neutral on the stack (as a
-  special exception, the type of WHILE$ body occurring in the
-  FORMAT.NAMES function of the standard styles is also supported).  The
-  predicate must deliver exactly one boolean value.
+
+On the compilation of a language that no-one can read or write
+==============================================================
+
+The language of BibTeX style files (BAFLL) is expected to be read or
+written by "wizards" only.  (This is how the original BibTeX calls the
+authors of BibTeX style files.)  In fact, when casual users try to
+customize a BibTeX style file, they often come up with slightly broken
+styles that appear to work but which fail in corner cases.  The reason
+is that programs written in BAFLL can hardly be read, written, or even
+debugged. 
+
+This causes an extra difficulty for the compiler, because broken
+corner cases tend to misbehave on the stack, rendering the function
+unanalyzable, hence uncompilable.  The compiler now contains a
+heuristic that tries to fix these situations, but it may fail.  In
+this case, you should try to understand the error messages, fix the
+BibTeX style file accordingly, and try compiling it again.
 
 
 Implementation dependencies
@@ -134,14 +150,15 @@ I noticed that CMUCL 3.0.8 18c+ does not like (PEEK-CHAR T STREAM NIL
 whitespace?  (I don't use this any more in CL-BibTeX.)
 
 CLISP 2.30:
-1. While compiling bibtex-compiler.lisp, complains:
-   (SETF FIND-CLASS)(VARIABLE): #<PACKAGE COMMON-LISP> is locked
-2. When I invoke COMPILE-BST-FILE, CLISP says "Lisp stack
+1. When I invoke COMPILE-BST-FILE, CLISP says "Lisp stack
    overflow. RESET"; this seems to be caused by the pprint-dispatch
    function for DEFINE-BIBTEX-STYLE.
-3. The format directive ~<...~:>  (logical block) does not seem to work
+2. The format directive ~<...~:>  (logical block) does not seem to work
    properly.
+(I have used reader conditionalization to make CL-BibTeX work with CLISP.)
 
 
+
+Have fun!
 
  -- Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>

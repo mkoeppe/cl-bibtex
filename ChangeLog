@@ -1,3 +1,100 @@
+2003-01-03  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
+
+	* bibtex-compiler.lisp (coerce-form): New.
+	(pop-form): Use it here.
+
+	(type-union*): New.
+	("IF$"): Fix handling of *relaxed-compilation*.  Handle the case
+	of THEN function returning BOOLEAN and ELSE function returning
+	INTEGER.
+
+	(package-as-body): New keyword arg, expected-result-types.
+	(package-as-form, package-as-procedure): Pass args to package-as-body.
+
+	(":="): Catch assignments to non-variables.  Request the type of the
+	assigned-to variable when popping the new value.
+
+	(compile-literal): New.
+	(bst-compile-literal): Use it here. Pass remaining args to
+	package-as-form.
+
+	(*silent-compilation*): New variable.
+	(bst-compile-warning): Don't signal a condition if *silent-compilation*.
+	("IF$"): Bind *silent-compilation* to true during the first pass.
+
+	(assign-loop-variables): New.
+	(bst-compile-literal-as-while-body): Use it here.
+	(bst-compile-literal-as-while-predicate): New.
+	(current-stack-as-values-list): New.
+	("WHILE$"): Handle the case of loops with complicated data flow.
+
+	(compile-funcall): Pass the pop-form-args of a function to pop-form
+	when popping the arguments.
+
+	* bst-builtins.lisp ("+"): Use build-associative-form.
+	("change.case$", "chr.to.int$"): Use the pop-form args
+	:NEED-VARIABLE T.  Get rid of LET.
+
+	* bst-functions.lisp (bst-function): New field, pop-form-args.
+
+	* bst-reader.lisp (*bst-readtable*):
+	Intern :-symbols into the current package.
+
+	* lisp-form-builder.lisp (build-values-body, build-progn-form): New.
+
+	* packages.lisp (bibtex-runtime, bibtex-compiler):
+	Shadow VARIABLE also in CLISP.
+
+2002-12-25  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
+
+	* bibtex.lisp (make-macro-set-form): Don't emit a SETF form if
+	nothing is to be set.
+	(compile-bst-file): Make some variables constant.  Sort shadowed
+	symbols.
+
+	* bibtex-compiler.lisp (*bst-function-call-sequence*): New.
+	(*relaxed-compilation*): New.
+	(bst-compiler-warning, bst-compile-warning): New.
+
+	(pop-form):  Even if NEED-VARIABLE is :IF-SIDE-EFFECTS, we need to
+	make sure we pop single-value forms only!  (This caused a bug when
+	compiling a custombib-generated style file.)
+
+	(pop-form): Return a fourth value that disambiguates between a Lisp
+	form NIL and the exhausted-stack situation when :WHEN-EMPTY is NIL.
+	(pop-single-value-form): Handle this.
+
+	(":="): Do nothing for constant variables.  Otherwise, count
+	assignments.
+
+	(get-bst-function): Signal an error if a function is referenced that
+	could not be compiled.
+
+	("IF$"): Handle *RELAXED-COMPILATION*.
+
+	(compile-bst-function): HANDLER-BIND for condition
+	BST-COMPILER-WARNING.
+
+	(make-some-variables-lexical): Don't try to make constants lexical.
+	(make-some-variables-constant): New.
+
+	* bst-reader.lisp: Record BST function calls in
+	*BST-FUNCTION-CALL-SEQUENCE*.
+
+	* bst-functions.lisp (bst-function): New fields.
+	(register-bst-global-var): New keyword arg.
+	(bst-name-to-lisp-name): Handle :constant variables.
+
+	* bst-builtins.lisp (FALSE, TRUE): New pseudo-primitive BST functions.
+	(ENTRY.MAX$, GLOBAL.MAX$): Declare constant.
+
+2002-12-15  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
+
+	Version 0.3.1
+	
+	* bst-reader.lisp:  Fix the interpreter to not compute Lisp
+	symbols for the BST identifiers, which would fail.
+
 2002-12-15  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
 
 	Version 0.3

@@ -6,10 +6,19 @@ To do:
 * Add a test suite, consisting of database files and BibTeX style files,
   for testing the correctness of cl-bibtex
 * Add BibTeX's output line breaking mechanism (but make it optional).
+* crossref doesn't seem to work with \cite{*} ?
+* When a macro can't be found, don't skip the whole entry.
+* There are too many tildes in some formatted names (C.~A.~J. Xyz)
 
 In the compiler:
 
-* detect constant variables
+* get rid of the variable *lexicals* and related hacks
+* the BST reader should maybe read into a fresh package, rather than
+  the current package?
+* package-as-body should avoid emitting 
+  (multiple-value-bind (arg1 arg2)
+      (form)
+    (values arg1 arg2)
 * maybe name formal arguments "STRING1", "INT1", ..., depending on type?
 * don't name the temporary variables occuring in while$ "ARGnn"
 * propagate types when they get more specific:
