@@ -1094,23 +1094,41 @@ TeX-group)."
 			 ,@body)
     ,string-or-group))
 
-(defvar *foreign-character-purifications*
-  '(("i" . "i")
-    ("j" . "j")
-    ("ae" . "ae")
-    ("AE" . "AE")
-    ("oe" . "oe")
-    ("OE" . "OE")
-    ("aa" . "a")
-    ("AA" . "A")
-    ("o" . "o")
-    ("O" . "O")
-    ("l" . "l")
-    ("L" . "L")
-    ("ss" . "ss"))
-  "An alist mapping the names of control sequences to strings, which
-are their purifications.  All other control sequences have null
-purification.")
+(defstruct foreign-character
+  name		      ; a string representing a TeX control sequence
+  uppercase	      ; list of tokens for the uppercase version of it
+  lowercase	      ; likewise
+  purification)	      ; a string that is the purified version of it
+
+(defvar *foreign-characters* ()
+  "A list of FOREIGN-CHARACTER structures.")
+
+(defun define-foreign-character (&rest args)
+  (let ((foreign-character (apply #'make-foreign-character args)))
+    (push foreign-character *foreign-characters*)
+    foreign-character))
+
+(define-foreign-character :name "i"  :purification "i"  :uppercase '(#\I))
+(define-foreign-character :name "j"  :purification "j"  :uppercase '(#\J))
+(define-foreign-character :name "ae" :purification "ae" :uppercase '("AE"))
+(define-foreign-character :name "AE" :purification "AE" :lowercase '("ae"))
+(define-foreign-character :name "oe" :purification "oe" :uppercase '("OE"))
+(define-foreign-character :name "OE" :purification "OE" :lowercase '("oe"))
+(define-foreign-character :name "aa" :purification "a"  :uppercase '("AA"))
+(define-foreign-character :name "AA" :purification "A"  :lowercase '("aa"))
+(define-foreign-character :name "o"  :purification "o"  :uppercase '("O"))
+(define-foreign-character :name "O"  :purification "O"  :lowercase '("o"))
+(define-foreign-character :name "l"  :purification "l"  :uppercase '("L"))
+(define-foreign-character :name "L"  :purification "L"  :lowercase '("l"))
+(define-foreign-character :name "ss" :purification "ss" :uppercase '(#\S #\S))
+
+(defun find-foreign-character (name)
+  (let ((tail (member name *foreign-characters*
+		      :key 'foreign-character-name
+		      :test 'string=)))
+    (if (null tail)
+	nil
+	(car tail))))
 
 (defun bibtex-string-purify (string)
   "Remove nonalphanumeric characters except for whitespace and
@@ -1142,64 +1160,135 @@ associated with a special character."
 		    (whitespace-p token))
 		(princ #\Space s))))
 	(string
-	 (let ((purification (assoc token *foreign-character-purifications* :test 'string=)))
-	   (when purification
-	     (princ (cdr purification) s))))))))
+	 (let ((foreign-character (find-foreign-character token)))
+	   (when foreign-character
+	     (princ (foreign-character-purification foreign-character) s))))))))
 
-(defun tex-group-upcase (group)
-  (mapcar (lambda (token)
-	    (typecase token
-	      (character (char-upcase token))
-	      (t token)))
+(defun upcase-foreign-character (token)
+  "TOKEN is a string, designating a TeX control sequence.  Return a
+list of tokens that are the uppercase replacement."
+  (let ((foreign-character (find-foreign-character token)))
+    (if foreign-character
+	(or (foreign-character-uppercase foreign-character)
+	    (list token))
+	(list token))))
+
+(defun downcase-foreign-character (token)
+  "TOKEN is a string, designating a TeX control sequence.  Return a
+list of tokens that are the lowercase replacement."
+  (let ((foreign-character (find-foreign-character token)))
+    (if foreign-character
+	(or (foreign-character-lowercase foreign-character)
+	    (list token))
+	(list token))))
+
+(defun tex-group-change-case (group char-fun foreign-character-fun
+			      foreign-character-char-fun after-group-thunk)
+  (mapcan (lambda (token)
+	    (etypecase token
+	      (character
+	       (list (funcall char-fun token)))
+	      (list
+	       (cond
+		 ((and token
+		       (stringp (first token)))
+		  ;; Treat this brace group as a special character,
+		  ;; i.e., upcase some control sequences and upcase
+		  ;; ordinary characters, but don't recurse
+		  (labels
+		      ((change-case-recursively (group)
+			 (list (mapcan (lambda (token)
+					 (etypecase token
+					   (character
+					    (list (funcall foreign-character-char-fun token)))
+					   (string
+					    (funcall foreign-character-fun token))
+					   (list
+					    (change-case-recursively token))))
+				       group))))
+		    (prog1
+			(change-case-recursively token)
+		      (funcall after-group-thunk))))
+		 (t
+		  ;; An ordinary brace group, keep as is
+		  (prog1
+		      (list token)
+		    (funcall after-group-thunk)))))
+	      (string
+	       (prog1 (funcall foreign-character-fun token)
+		 (funcall after-group-thunk)))))
 	  group))
 
+(defun tex-group-upcase (group)
+  (tex-group-change-case group
+			 #'char-upcase #'upcase-foreign-character
+			 #'char-upcase #'values))
+			      
 (defun bibtex-string-upcase (string)
-  "Convert to upper case all letters in STRING at brace-level 0."
+  "Convert to upper case all letters in STRING at brace-level 0.
+Also handle special characters in a very complicated way."
   (with-output-to-string (s)
     (write-tex-group (tex-group-upcase (parse-tex-string string))
 		     s)))
 
 (defun tex-group-downcase (group)
-  (mapcar (lambda (token)
-	    (typecase token
-	      (character (char-downcase token))
-	      (t token)))
-	  group))
+  (tex-group-change-case group
+			 #'char-downcase #'downcase-foreign-character
+			 #'char-downcase #'values))
 
 (defun bibtex-string-downcase (string)
-  "Convert to lower case all letters in STRING at brace-level 0."
+  "Convert to lower case all letters in STRING at brace-level 0.
+Also handle special characters in a very complicated way."
   (with-output-to-string (s)
     (write-tex-group (tex-group-downcase (parse-tex-string string))
 		     s)))
 
 (defun tex-group-titledowncase (group)
   (let ((colon-state 'colon-and-whitespace))
-    (mapcar (lambda (token)
-	      (typecase token
-		(character
-		 (prog1
-		     (if (eq colon-state 'colon-and-whitespace)
-			 token
-			 (char-downcase token))
-		   (cond ((char= token #\:)
-			  (setq colon-state 'colon))
-			 ((and (whitespace-p token)
-			       (eq colon-state 'colon))
-			  (setq colon-state 'colon-and-whitespace))
-			 (t
-			  (setq colon-state nil)))))
-		(t (setq colon-state nil)
-		   token)))
-	    group)))
+    (tex-group-change-case group
+			   (lambda (char)
+			     (prog1 
+				 (if (eq colon-state 'colon-and-whitespace)
+				     char
+				     (char-downcase char))
+			       (cond ((char= char #\:)
+				      (setq colon-state 'colon))
+				     ((and (whitespace-p char)
+					   (eq colon-state 'colon))
+				      (setq colon-state 'colon-and-whitespace))
+				     (t
+				      (setq colon-state nil)))))
+			   (lambda (control-sequence)
+			     (if (eq colon-state 'colon-and-whitespace)
+				 (list control-sequence)
+				 (downcase-foreign-character control-sequence)))
+			   (lambda (char)
+			     (if (eq colon-state 'colon-and-whitespace)
+				 char
+				 (char-downcase char)))
+			   (lambda ()
+			     (setq colon-state nil)))))
 
 (defun bibtex-string-titledowncase (string)
   "Convert to lower case all letters except the very first character
 in the STRING, which it leaves alone, and except the first character
 following any `:' and then non-null whitespace, which it also leaves
-alone.  Only those letters at brace-level 0 are affected."
+alone.  Only those letters at brace-level 0 are affected.  Also handle
+special characters in a very complicated way."
   (with-output-to-string (s)
     (write-tex-group (tex-group-titledowncase (parse-tex-string string))
 		     s)))
+
+#+check-bibtex
+(progn
+  (assert (string= (bibtex-string-titledowncase "AB{\\'O}DE{\\AE}FG: DEF:GHI")
+		   "Ab{\\'o}de{\\ae}fg: Def:ghi"))
+  (assert (string= (bibtex-string-titledowncase "{\\\"U}ber")
+		   "{\\\"U}ber"))
+  (assert (string= (bibtex-string-upcase "Erd{\\H{o}}s")
+		   "ERD{\\H{O}}S")))
+	  
+		   
 
 (defun bibtex-string-prefix (string num-tokens)
   "The BibTeX TEXT.PREFIX$ function."
