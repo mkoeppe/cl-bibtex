@@ -55,10 +55,11 @@
   type
   lisp-name
   setter
-  lisp-form
+  lisp-form-maker
   argument-types
   result-types
   side-effects-p
+  setter-form-maker
   value
   body)
 
@@ -118,8 +119,8 @@
 
 (defun call-type ()
   (let* ((type (gethash "entry-type" *bib-entry*))
-	 (function (or (get-bst-function-of-type type '(wiz-defined))
-		       (get-bst-function-of-type 'default.type '(wiz-defined)))))
+	 (function (or (get-bst-function-of-type type '(wiz-defined compiled-wiz-defined))
+		       (get-bst-function-of-type 'default.type '(wiz-defined compiled-wiz-defined)))))
     (when function
       (bst-execute function))))
 
@@ -199,6 +200,9 @@
 
 (register-bst-primitive "skip$" '() '() 'values)
 
+(define-bst-primitive "stack$" () ()
+  nil)
+
 (define-bst-primitive "substring$" ((s (string)) (start (integer)) (count (integer)))
     ((string))
   (cond
@@ -221,6 +225,9 @@
 (register-bst-primitive "text.length$" '((string)) '((integer)) 'length) ; FIXME: count text chars only
 (register-bst-primitive "text.prefix$" '((string) (integer)) '((string)) 'bibtex-string-prefix)
 
+(define-bst-primitive "top$" ((object t)) ()
+  (format *error-output* "~A~%" object))
+
 (define-bst-primitive "type$" () ((string))
   (string-downcase (gethash "entry-type" *bib-entry* "")))
 
@@ -242,8 +249,13 @@
 	(make-bst-function :name entry
 			   :lisp-name #'(lambda ()
 					  (gethash entry *bib-entry* default-value))
+			   :lisp-form-maker #'(lambda ()
+						`(gethash ,entry *bib-entry* ,default-value))
 			   :setter #'(lambda (value) (setf (gethash entry *bib-entry*)
 							   value))
+			   :setter-form-maker #'(lambda (value-form)
+						  `(setf (gethash ,entry *bib-entry*)
+						    ,value-form))
 			   :type func-type
 			   :argument-types '()
 			   :result-types (list type)
@@ -260,6 +272,10 @@
 				       (setf (bst-function-value
 					      (gethash variable hash-table))
 					     value))
+			   :lisp-form-maker #'(lambda ()
+						`variable)
+			   :setter-form-maker #'(lambda (value-form)
+						  `(setq ,variable ,value-form))
 			   :type func-type
 			   :argument-types '()
 			   :result-types (list type)
@@ -295,7 +311,9 @@ program, rather than interpreting the BST program.")
 BST program.")
 
 (defun lisp-write (arg)
-  (pprint arg *lisp-stream*))
+  (let ((*print-case* :downcase))
+    (pprint arg *lisp-stream*))
+  (terpri *lisp-stream*))
 
 #|(defmacro lisp-write/exec (form)
   (if *bst-compiling*
@@ -396,10 +414,10 @@ signal an error and don't return."
     (unless (singleton-list-p function-list)
       (error "Illegal argument ~A to execute command"
 	     function-list))
-    (let* ((name (car function-list))
-	   (function (get-bst-function-of-type name '(built-in wiz-defined))))
-      (if *bst-compiling*
-	  (warn "Execute command not implemented")
+    (if *bst-compiling*
+	(warn "Execute command not implemented")
+	(let* ((name (car function-list))
+	       (function (get-bst-function-of-type name '(built-in wiz-defined compiled-wiz-defined))))
 	  (bst-execute function)))))
 
 (defun bst-function-command ()
@@ -410,18 +428,28 @@ signal an error and don't return."
 	     function-list))
     (let* ((bst-name (car function-list)))
       (check-for-already-defined-function bst-name)
-      (let ((lisp-name (bst-name-to-lisp-name bst-name))
-	    (argument-types nil)
-	    (result-types nil)
-	    (side-effects-p nil))
-	(setf (gethash (string bst-name) *bst-functions*)
-	      (make-bst-function :name (string bst-name)
-				 :lisp-name lisp-name
-				 :type 'wiz-defined
-				 :argument-types argument-types
-				 :result-types result-types
-				 :side-effects-p side-effects-p
-				 :body function-definition))))))
+      (if *bst-compiling*
+	  (let ((lisp-name (bst-name-to-lisp-name bst-name)))
+	    (handler-case 
+		(multiple-value-bind (defun-form argument-types
+					 result-types side-effects-p)
+		    (bst-compile-defun lisp-name function-definition)
+		  (lisp-write defun-form)
+		  (setf (gethash (string bst-name) *bst-functions*)
+			(make-bst-function :name (string bst-name)
+					   :lisp-name lisp-name
+					   :type 'compiled-wiz-defined
+					   :argument-types argument-types
+					   :result-types result-types
+					   :side-effects-p side-effects-p)))
+	      (bst-compiler-error (condition)
+		(format *error-output*
+			"While compiling wizard-defined function `~S':~%~A~%"
+			bst-name (bst-compiler-error-message condition)))))
+	  (setf (gethash (string bst-name) *bst-functions*)
+		(make-bst-function :name (string bst-name)
+				   :type 'wiz-defined
+				   :body function-definition))))))
 
 (defun bst-integers-command ()
   (let* ((name-list (bst-read)))
@@ -432,8 +460,7 @@ signal an error and don't return."
       (check-for-already-defined-function bst-name)
       (register-bst-global-var bst-name 'int-global-var '(integer) 0 *bst-functions*)
       (if *bst-compiling*
-	  (let ((lisp-name (bst-name-to-lisp-name bst-name)))
-	    (lisp-write `(defvar ,lisp-name 0)))))))
+	  (let ((lisp-name (bst-name-to-lisp-name bst-name 0)))))))
 
 (defun bst-iterate-command ()
   (unless *read-seen-p*
@@ -442,10 +469,10 @@ signal an error and don't return."
     (unless (singleton-list-p function-list)
       (error "Illegal argument ~A to iterate command"
 	     function-list))
-    (let* ((name (car function-list))
-	   (function (get-bst-function-of-type name '(built-in wiz-defined))))
-      (if *bst-compiling*
-	  (warn "Iterate command not implemented")
+    (if *bst-compiling*
+	(warn "Iterate command not implemented")
+	(let* ((name (car function-list))
+	       (function (get-bst-function-of-type name '(built-in wiz-defined compiled-wiz-defined))))
 	  (loop for index from 0 below (length *bib-entries*)
 		do (let ((*bib-entry* (elt *bib-entries* index)))
 		     (bst-execute function)))))))
@@ -469,6 +496,8 @@ signal an error and don't return."
        (setq name (string name))
        (make-bst-function :name name
 			  :lisp-name (lambda () (gethash name *bib-macros*))
+			  :lisp-form-maker (lambda ()
+					     `(gethash name *bib-macros*))
 			  :type 'macro
 			  :argument-types '()
 			  :result-types '((string))
@@ -481,6 +510,7 @@ signal an error and don't return."
   (unless *entry-seen-p*
     (error "Illegal, read command before entry command"))
   (setq *read-seen-p* t)
+  (unless *bst-compiling*
   (dolist (file *bib-files*)
     (let ((expanded-file (kpathsea:find-file (concatenate 'string file ".bib"))))
       (unless expanded-file
@@ -491,7 +521,7 @@ signal an error and don't return."
 	(read-bib-database s))))
   (setq *bib-entries*
 	(cited-bib-entries (if *cite-all-entries* t *cite-keys*)
-			   :min-crossrefs 2)))   
+			   :min-crossrefs 2))))   
 
 (defun bst-reverse-command ()
   (unless *read-seen-p*
@@ -500,10 +530,11 @@ signal an error and don't return."
     (unless (singleton-list-p function-list)
       (error "Illegal argument ~A to execute command"
 	     function-list))
-    (let* ((name (car function-list))
-	   (function (get-bst-function-of-type name '(built-in wiz-defined))))
-      (if *bst-compiling*
-	  (warn "Reverse command not implemented")
+    (if *bst-compiling*
+	(warn "Reverse command not implemented")
+	(let* ((name (car function-list))
+	       (function (get-bst-function-of-type name '(built-in wiz-defined compiled-wiz-defined))))
+	
 	  (loop for index from (- (length *bib-entries*) 1) downto 0
 		do (let ((*bib-entry* (elt *bib-entries* index)))
 		     (bst-execute function)))))))
@@ -511,8 +542,10 @@ signal an error and don't return."
 (defun bst-sort-command ()
   (unless *read-seen-p*
     (error "Illegal, sort command before read command"))
-  (stable-sort *bib-entries* 'string<=
-	       :key (lambda (entry) (gethash "sort.key$" entry ""))))
+  (if *bst-compiling*
+      (warn "Sort command not implemented")
+      (stable-sort *bib-entries* 'string<=
+		   :key (lambda (entry) (gethash "sort.key$" entry "")))))
 
 (defun bst-strings-command ()
   (let* ((name-list (bst-read)))
