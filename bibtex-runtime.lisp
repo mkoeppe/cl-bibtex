@@ -124,9 +124,9 @@ right delimiter."
     ((#\{)
      (read-char *bib-stream*)
      (scan-balanced-braces *bib-stream* #\}))
-    ((#\")
+    ((#\")				; "
      (read-char *bib-stream*)
-     (scan-balanced-braces *bib-stream* #\"))
+     (scan-balanced-braces *bib-stream* #\")) ; "
     ((#\0 #\1 #\2 #\3 #\4 #\5 #\6 #\7 #\8 #\9)
      (loop as char = (peek-char nil *bib-stream*)
 	   while (digit-char-p char)
