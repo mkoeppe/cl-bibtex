@@ -16,12 +16,11 @@
 	   "*BIBTEX-LONG-TOKEN-LENGTH*" "*BIBTEX-LONG-NAME-LENGTH*"
 	   "FORMAT-BIBTEX-NAME"
 	   "FORMAT-NTH-BIBTEX-NAME" "NUM-BIBTEX-NAMES" "BIBTEX-SUBSTRING"
-	   "BIB-WARN"
 	   "ADD-PERIOD-UNLESS-SENTENCE-END"
 	   "WHITESPACE-P" "EMPTY-FIELD-P" "BIBTEX-STRING-PURIFY"
 	   "BIBTEX-STRING-DOWNCASE" "BIBTEX-STRING-UPCASE" "BIBTEX-STRING-TITLEDOWNCASE"
 	   "BIBTEX-STRING-PREFIX"
-	   "BIB-WARN" "BIB-ERRROR" "BIB-FATAL"
+	   "BIB-WARN" "BIB-WARN*" "BIB-ERRROR" "BIB-FATAL"
 	   #:*err-count* #:*history*
 	   #:+spotless-history+ #:+warning-message+ #:+error-message+ #:+fatal-message+
 	   #:*bbl-output*))
@@ -65,6 +64,10 @@
   (apply #'format *error-output* format-control args)
   (terpri *error-output*)
   (mark-warning))
+
+(defun bib-warn* (&rest strings)
+  "Emit a warning consisting of the concatenation of STRINGS."
+  (bib-warn "~{~A~}" strings))
 
 (defun bib-error (format-control &rest args)
   "When there's a serious error parsing a BIB file, we flush
@@ -820,9 +823,8 @@ the delimiter, which is left in the stream."
 	(unless s
 	  (format *error-output* "I couldn't open database file `~A'" expanded-file))
 	(read-bib-database s))))
-  (setq *bib-entries*
-	(cited-bib-entries (if *cite-all-entries* t *cite-keys*)
-			   :min-crossrefs 2)))
+  (cited-bib-entries (if *cite-all-entries* t *cite-keys*)
+		     :min-crossrefs 2))
 
 ;;; Misc functions
 

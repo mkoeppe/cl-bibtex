@@ -4,19 +4,22 @@
 
 ;; TODO:
 ;; * macros
-;; * change the crufty code in while$ to use the general lexical-variables
-;;   mechanism.  (Always generate (do () (...) ...) plus bindings.  When
-;;   creating the Lisp code, turn bindings around a DO into a
-;;   (do (BINDINGS...) (...) ...).
 ;; * most variables are in fact lexical variables (some, in fact, only
 ;;   store arguments for later use).  Keep track whether a variable is
 ;;   accessed before it is assigned in any function; if not, we can make
 ;;   it lexical in *all* functions.  This requires a second compiler pass.
+;; * the preliminary lexical code fails at FORMAT.LAB.NAMES
+;;   (binding is missing for NAMESLEFT, NAMEPTR). 
+;; * avoid making a lexical binding for a formal argument; rather try to
+;;   rename the formal argument to get a useful name. 
+;; * maybe name formal arguments "STRING1", "INT1", ..., depending on type?
 ;; * maybe replace dots with dashes in function names
 ;; * don't name the temporary variables occuring in while$ "ARGnn"
 ;; * propagate types when they get more specific:
 ;;   { $duplicate + } is of type (INTEGER) -> (INTEGER), not T -> (INTEGER)
 ;; * be more strict when checking the type of a popped form
+;; * If call.type$ occurs only once (in an ITERATE command),
+;;   use CASE instead of ASSOC/FUNCALL.
 ;; * Handle the "tail-recursive" family of FORMAT.NAMES functions:
 ;;
 ;;FUNCTION {format.names}
@@ -157,6 +160,39 @@ applied to the parallel elements in LISTS."
 					      (currently-compiled-body-with-markup))
 				      (apply 'format nil format-string args)))))
 
+;;; Side effects
+
+(defun any-side-effects-p (side-effects)
+  (or (side-effects-side-effects-p side-effects)
+      (not (null (side-effects-assigned-variables side-effects)))))
+
+(defun max-side-effects (&rest effectss)
+  "Compute the maximum of the side-effects EFFECTSS."
+  (make-instance 'side-effects
+		 :side-effects-p (some #'side-effects-side-effects-p effectss)
+		 :used-variables (apply #'set-union (mapcar #'side-effects-used-variables effectss))
+		 :assigned-variables (apply #'set-union (mapcar #'side-effects-assigned-variables effectss))
+		 :unconditionally-assigned-variables
+		 (apply #'set-union (mapcar #'side-effects-unconditionally-assigned-variables effectss))))   
+
+(defun remove-variables-from-side-effects (variables side-effects)
+  "VARIABLES is a list of strings or symbols to be removed from any
+mention in SIDE-EFFECTS.  Return the resulting side effects."
+  (make-instance 'side-effects
+		 :side-effects-p (side-effects-side-effects-p side-effects)
+		 :assigned-variables
+		 (set-difference (side-effects-assigned-variables side-effects)
+				 variables
+				 :test 'equalp)
+		 :unconditionally-assigned-variables
+		 (set-difference (side-effects-unconditionally-assigned-variables side-effects)
+				 variables
+				 :test 'equalp)
+		 :used-variables
+		 (set-difference (side-effects-used-variables side-effects)
+				 variables
+				 :test 'equalp)))
+
 (defvar *bst-gentemp-counter* 0)
 
 (defun bst-gentemp (prefix)
@@ -177,10 +213,6 @@ bound variables onto *FORM-STACK*."
 	  *form-bindings*)
     (setq *form-stack* (nconc (nreverse mvforms)
 			      *form-stack*))))
-
-(defun any-side-effects-p (side-effects)
-  (or (side-effects-side-effects-p side-effects)
-      (not (null (side-effects-assigned-variables side-effects)))))
 
 (defun pop-form (type &key (need-variable nil) (when-empty :borrow)
 		 (assigned-variables ()))
@@ -309,15 +341,6 @@ the actual type of the delivered value, and SIDE-EFFECTS."
 		(union a b :test 'equalp))
 	      lists)))
 
-(defun max-side-effects (&rest effectss)
-  "Compute the maximum of the side-effects EFFECTSS."
-  (make-instance 'side-effects
-		 :side-effects-p (some #'side-effects-side-effects-p effectss)
-		 :used-variables (apply #'set-union (mapcar #'side-effects-used-variables effectss))
-		 :assigned-variables (apply #'set-union (mapcar #'side-effects-assigned-variables effectss))
-		 :unconditionally-assigned-variables
-		 (apply #'set-union (mapcar #'side-effects-unconditionally-assigned-variables effectss))))   
-
 (defun package-as-body ()
   "Build a Lisp body corresponding to the computation captured in
 *FORM-BINDINGS* and *FORM-STACK*.  The Lisp body contains free
@@ -337,17 +360,32 @@ FREE-VARIABLES."
 	  (side-effects (apply #'max-side-effects (mapcar #'mvform-side-effects result-mvforms)))
 	  (let-bindings ()))
       (labels ((make-let* ()
-		 (case (length let-bindings)
-		   (0 nil)
-		   (1 (setq body (list `(let ,let-bindings
-					 ,@body))
-			    let-bindings ()))
-		   (t (setq body (list `(let* ,let-bindings
-					 ,@body))
-			    let-bindings ())))))
+		 (when (not (null let-bindings))
+		   (cond
+		     ((and (= (length body) 1) (consp (car body)) (eql (caar body) 'do))
+	     ;; body is a single DO form, so we put our bindings there
+		      (destructuring-bind (do do-bindings &rest do-body)
+			  (car body)
+			(declare (ignore do))
+			(setq body (list `(do* ,(nconc let-bindings do-bindings)
+					   ,@do-body))
+			      let-bindings ())))
+		     (t 
+		      (case (length let-bindings)
+			(0 nil)
+			(1 (setq body (list `(let ,let-bindings
+					      ,@body))
+				 let-bindings ()))
+			(t (setq body (list `(let* ,let-bindings
+					      ,@body))
+				 let-bindings ()))))))))
 	(dolist (binding *form-bindings*)
+	  ;; don't keep track of references and assignments to lexical
+	  ;; variables outside their scope:
 	  (setq side-effects
-		(max-side-effects side-effects (mvform-side-effects (binding-mvform binding))))
+		(remove-variables-from-side-effects
+		 (max-side-effects side-effects (mvform-side-effects (binding-mvform binding)))
+		 (mapcar #'variable-name (binding-variables binding))))
 	  (case (length (binding-variables binding))
 	    (0 (make-let*)
 	       (setq body (cons (mvform-form (binding-mvform binding))
@@ -452,18 +490,19 @@ special forms by directly manipulating the current compiler data.")
       (let* ((fun (get-bst-function var))
 	     (name (bst-function-name fun))
 	     assoc)
-	(labels ((compute-side-effects ()
+	(labels ((compute-side-effects (assigned-thing)
 		   (max-side-effects
 		    (mvform-side-effects value-mvform)
 		    (make-instance 'side-effects
-				   :assigned-variables (list name)
-				   :unconditionally-assigned-variables (list name)))))
+				   :assigned-variables (list assigned-thing)
+				   :unconditionally-assigned-variables (list assigned-thing)))))
 	  (cond
 	    ((setq assoc (assoc name *lexical-variables* :test 'string-equal))
-	     (push-mvform :form `(setq ,(variable-name (cdr assoc))
-				  ,(mvform-form value-mvform))
-			  :types ()
-			  :side-effects (compute-side-effects)))
+	     (let ((var-name (variable-name (cdr assoc))))
+	       (push-mvform :form `(setq ,var-name
+				    ,(mvform-form value-mvform))
+			    :types ()
+			    :side-effects (compute-side-effects var-name))))
 	    ((member (bst-function-name fun) *lexicals* :test 'string-equal)
 	     (let ((var (make-variable :name (bst-name-to-lisp-name name)
 				       :type (car (bst-function-result-types fun)))))
@@ -475,7 +514,7 @@ special forms by directly manipulating the current compiler data.")
 		    (setter-form (funcall setter-form-maker (mvform-form value-mvform))))
 	       (push-mvform
 		:form setter-form :types ()
-		:side-effects (compute-side-effects)))))))))
+		:side-effects (compute-side-effects name)))))))))
 
 (defun get-bst-function (name)
   (let ((function (gethash (string name) *bst-functions*)))
@@ -500,7 +539,7 @@ FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P, and FREE-VARIABLES."
 (define-bst-special-form "if$"
     (let* ((else-literal (pop-literal))
 	   (then-literal (pop-literal))
-	   (val-mvform (pop-single-value-form '(boolean) :need-variable :if-side-effect)))
+	   (val-mvform (pop-single-value-form '(boolean) :need-variable :if-side-effects)))
       ;; Side effects matter because our Lisp code beautifier reorders
       ;; the tested conditions to its liking.
 
@@ -624,12 +663,8 @@ BODY, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS, and FREE-VARIABLES."
 			       body-literal body-arg-types body-res-types))
 	  ;; filter out locals from the list of variables assigned to
 	  ;; in the body
-	  (setf (side-effects-assigned-variables body-side-effects)
-		(set-difference (side-effects-assigned-variables body-side-effects)
-				free-body-vars)
-		(side-effects-unconditionally-assigned-variables body-side-effects)
-		(set-difference (side-effects-unconditionally-assigned-variables body-side-effects)
-				free-body-vars))
+	  (setq body-side-effects
+		(remove-variables-from-side-effects free-body-vars body-side-effects))
 	  (let ((init-clauses (mapcar (lambda (var type)
 					`(,var ,(pop-form type)))
 				      free-body-vars body-arg-types))
@@ -658,8 +693,12 @@ BODY, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS, and FREE-VARIABLES."
       ((setq it (gethash (string function-name) *bst-special-forms*))
        (funcall it))
       ((setq it (assoc (string function-name) *lexical-variables* :test 'string-equal))
-       (push-mvform :form (variable-name (cdr it))
-		    :types (list (variable-type (cdr it)))))
+       (let ((var-name (variable-name (cdr it))))
+       (push-mvform :form var-name
+		    :types (list (variable-type (cdr it)))
+		    :side-effects
+		    (make-instance 'side-effects
+				   :used-variables (list var-name)))))
       (t
        (let* ((bst-function (get-bst-function function-name))
 	      (arg-types (bst-function-argument-types bst-function))
@@ -766,12 +805,13 @@ ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS."
     (with-open-file (*lisp-stream* lisp-file :direction :output)
       (with-open-file (bst-stream bst-file)
 	(format *lisp-stream*
-		";;;; This is a -*- Common-Lisp -*- program, automatically translated~%;;;; from the BibTeX style file `~A'~%;;;; by the CL-BibTeX compiler ($Revision: 1.7 $).~%"
+		";;;; This is a -*- Common-Lisp -*- program, automatically translated~%;;;; from the BibTeX style file `~A'~%;;;; by the CL-BibTeX compiler ($Revision: 1.8 $).~%"
 		bst-file)
 	(get-bst-commands-and-process bst-stream)
 	(lisp-write `(defun ,(intern (string-upcase (pathname-name bst-file))) ()
 		      (let ((*bib-entry-type-functions*
-			     ',(make-entry-type-function-alist)))
+			     ',(make-entry-type-function-alist))
+			    bib-entries)
 			,@(reverse *main-lisp-body*))))))))
 
 (defun compile-bst-fun (definition &key int-vars str-vars)
@@ -842,7 +882,7 @@ ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS."
 		
 
 (progn
-  (let ((*lexicals* '("NUMNAMES" "NAMESLEFT" "NAMEPTR" "S" "T" "MULTIRESULT")))
+  (let ((*lexicals* '("NUMNAMES" "NAMESLEFT" "NAMEPTR" "S" "T" "LEN" "MULTIRESULT")))
     (compile-bst-file (kpathsea:find-file "amsalpha-xx.bst")
 		      "/tmp/compiled-bst.lisp"))
   (load "/tmp/compiled-bst.lisp" :if-source-newer :compile)

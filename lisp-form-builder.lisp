@@ -2,6 +2,8 @@
 ;;; Copr. 2001, 2002 Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>
 ;;; This is free software, licensed under GNU GPL (see file COPYING)
 
+(in-package bibtex-compiler)
+
 (defun build-if-form (val-form then-form else-form)
   "Build a Lisp form equivalent to `(IF ,VAL-FORM ,THEN-FORM ,ELSE-FORM)
 but try to beautify the result by using COND, UNLESS, and WHEN, rather

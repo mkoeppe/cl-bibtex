@@ -2,7 +2,7 @@
 ;;; Copr. 2001, 2002 Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>
 ;;; This is free software, licensed under GNU GPL (see file COPYING)
 
-(use-package '(bibtex-runtime))
+(use-package '(bibtex-runtime bibtex-compiler))
 
 (defvar *bst-readtable*
   (let ((*readtable* (copy-readtable nil)))
@@ -53,7 +53,8 @@
 (defclass side-effects ()
   ((side-effects-p :accessor side-effects-side-effects-p
 		   :initarg :side-effects-p :initform nil)
-   ;; strings designating BST functions, symbols designating Lisp variables
+   ;; strings designating BST functions, symbols designating Lisp
+   ;; variables (including lexical BST variables)
    (used-variables :accessor side-effects-used-variables
 		   :initarg :used-variables :initform ())
    (assigned-variables :accessor side-effects-assigned-variables
@@ -155,7 +156,7 @@
     (when function
       (bst-execute function)))
   :compiled `(let ((type/fun (assoc (gethash "ENTRY-TYPE" *bib-entry*)
-				    *bib-entry-type-functions*)))
+				    *bib-entry-type-functions* :test 'string-equal)))
 	      (if type/fun
 		  (funcall (cdr type/fun))
 		  (,(bst-name-to-lisp-name "default.type")))))
@@ -302,7 +303,16 @@
   :interpreted (string-downcase (gethash "ENTRY-TYPE" *bib-entry* ""))
   :compiled `(string-downcase (gethash "ENTRY-TYPE" *bib-entry* "")))
 
-(register-bst-primitive "warning$" '((string)) 'nil 'bib-warn :side-effects-p t)
+(define-bst-primitive "warning$" ((warning (string))) ()
+  :interpreted (bib-warn warning)
+  :compiled (if (and (consp warning)
+		     (not (mismatch warning '(concatenate (quote string))
+				    :end1 2 :test 'equal)))
+		`(bib-warn* ,@(cddr warning))
+		`(bib-warn* ,warning))
+  :side-effects-p t)
+
+(mismatch '(1 2 3) '(1 2) :end1 2)
 
 (define-bst-primitive "while$" ((predicate (symbol body)) (body (symbol body))) ()
   :interpreted
@@ -357,8 +367,8 @@
 			   :argument-types '()
 			   :result-types (list type))))
 
-(register-bst-entry "sort.key$" 'str-entry-var '(string) "" *builtin-bst-functions*)
-(register-bst-entry "crossref" 'field '(string missing) nil *builtin-bst-functions*)
+(register-bst-entry "SORT.KEY$" 'str-entry-var '(string) "" *builtin-bst-functions*)
+(register-bst-entry "CROSSREF" 'field '(string missing) nil *builtin-bst-functions*)
 
 (defun register-bst-global-var (variable lisp-name func-type type initial-value hash-table)
   (let ((variable (string variable)))
@@ -377,9 +387,9 @@
 			     :result-types (list type)
 			     :value initial-value))))
 
-(register-bst-global-var "entry.max$" 'most-positive-fixnum 'int-global-var '(integer)
+(register-bst-global-var "ENTRY.MAX$" 'most-positive-fixnum 'int-global-var '(integer)
 			 most-positive-fixnum *builtin-bst-functions*)
-(register-bst-global-var "global.max$" 'most-positive-fixnum 'int-global-var '(integer)
+(register-bst-global-var "GLOBAL.MAX$" 'most-positive-fixnum 'int-global-var '(integer)
 			 most-positive-fixnum *builtin-bst-functions*)
 
 (defvar *bst-functions* nil)
@@ -571,7 +581,7 @@ signal an error and don't return."
     (let* ((name (car function-list))
 	   (function (get-bst-function-of-type name '(built-in wiz-defined compiled-wiz-defined))))
       (if *bst-compiling*
-	  (push `(dolist (*bib-entry* *bib-entries*)
+	  (push `(dolist (*bib-entry* bib-entries)
 		  ,(bst-compile-thunkcall name))
 		*main-lisp-body*)
 	  (dolist (*bib-entry* *bib-entries*)
@@ -610,8 +620,8 @@ signal an error and don't return."
     (error "Illegal, read command before entry command"))
   (setq *read-seen-p* t)
   (if *bst-compiling*
-      (push `(read-all-bib-files-and-compute-bib-entries) *main-lisp-body*)
-      (read-all-bib-files-and-compute-bib-entries)))   
+      (push `(setq bib-entries (read-all-bib-files-and-compute-bib-entries)) *main-lisp-body*)
+      (setq *bib-entries* (read-all-bib-files-and-compute-bib-entries))))
 
 (defun bst-reverse-command ()
   (unless *read-seen-p*
@@ -624,7 +634,7 @@ signal an error and don't return."
 	   (function (get-bst-function-of-type name '(built-in wiz-defined compiled-wiz-defined))))
 	
       (if *bst-compiling*
-	  (push `(dolist (*bib-entry* (reverse *bib-entries*))
+	  (push `(dolist (*bib-entry* (reverse bib-entries))
 		  ,(bst-compile-thunkcall name))
 		*main-lisp-body*)
 	  (dolist (*bib-entry* (reverse *bib-entries*))
@@ -634,8 +644,8 @@ signal an error and don't return."
   (unless *read-seen-p*
     (error "Illegal, sort command before read command"))
   (if *bst-compiling*
-      (push `(setq *bib-entries*
-	      (stable-sort *bib-entries* 'string<=
+      (push `(setq bib-entries
+	      (stable-sort bib-entries 'string<=
 	       :key (lambda (entry) (gethash "SORT.KEY$" entry ""))))
 	    *main-lisp-body*)
       (setq *bib-entries*
@@ -800,7 +810,6 @@ signal an error and don't return."
   (let ((*bib-macros* (make-hash-table))
 	(*bib-database* (make-hash-table :test #'equalp))
 	(*bib-preamble* "")
-	(*bib-entries* ())
 	(*bib-files* ())
 	(*cite-all-entries* nil)
 	(*cite-keys* ())
