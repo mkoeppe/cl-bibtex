@@ -121,11 +121,19 @@
 		   (gethash key *builtin-bst-functions*)))
     table))
 
-(defun bst-name-to-lisp-name (bst-name)
-  (setq bst-name (string-upcase (string bst-name)))
-  (if (string-equal bst-name "T")
-      (gentemp "TEMP")
-      (intern bst-name)))
+(defun bst-name-to-lisp-name (bst-name &optional (type :function))
+  (setq bst-name (substitute #\- #\. (string-upcase (string bst-name))))
+  (ecase type
+    ((:function :lexical)
+     (if (string-equal bst-name "T")
+	 (gentemp "TEMP")
+	 (intern bst-name)))
+    ((:variable)
+     (if (string-equal bst-name "T")
+	 (intern "*T*")
+	 (intern (concatenate 'string "*" bst-name "*"))))))
+
+      
 
 (defun check-for-already-defined-function (name)
   (unless (symbolp name)
