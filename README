@@ -27,8 +27,15 @@ files, formatting names, etc.
 You can invoke a preliminary BST-to-Common-Lisp compiler with the
 function COMPILE-BST-FILE:
 
-	 (compile-bst-file (kpathsea:find-file "amsalpha.bst")
-		  "/tmp/compiled-bst.lisp")
+	(compile-bst-file (kpathsea:find-file "amsalpha.bst")
+		          "/tmp/compiled-bst.lisp")
+
+Slightly better results can be obtained by:
+
+        (let ((*lexicals* '("NUMNAMES" "NAMESLEFT" "NAMEPTR" 
+                            "S" "T" "LEN" "MULTIRESULT")))
+          (compile-bst-file (kpathsea:find-file "amsalpha.bst")
+		            "/tmp/compiled-bst.lisp"))
 
 The resulting Lisp file is a readable Common Lisp version of the BST
 file, which can be run on the AUX file to produce a BBL file, without

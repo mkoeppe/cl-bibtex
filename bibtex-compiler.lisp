@@ -2,23 +2,6 @@
 ;;; Copr. 2001, 2002 Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>
 ;;; This is free software, licensed under GNU GPL (see file COPYING)
 
-;; TODO:
-;; * macros
-;; * most variables are in fact lexical variables (some, in fact, only
-;;   store arguments for later use).  Keep track whether a variable is
-;;   accessed before it is assigned in any function; if not, we can make
-;;   it lexical in *all* functions.  This requires a second compiler pass.
-;; * maybe name formal arguments "STRING1", "INT1", ..., depending on type?
-;; * maybe replace dots with dashes in function names
-;; * maybe put stars around special variables names
-;; * don't name the temporary variables occuring in while$ "ARGnn"
-;; * propagate types when they get more specific:
-;;   { $duplicate + } is of type (INTEGER) -> (INTEGER), not T -> (INTEGER)
-;; * be more strict when checking the type of a popped form
-;; * If call.type$ occurs only once (in an ITERATE command),
-;;   use CASE instead of ASSOC/FUNCALL?
-;; * Try to compile the whole custom-bib system (merlin.mbs)?
-
 (in-package bibtex-compiler)
 
 (defvar *bst-compiling* nil
