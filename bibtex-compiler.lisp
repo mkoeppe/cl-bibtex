@@ -29,6 +29,9 @@ the bib entries.")
 broken.  In an IF$ with bad stack use, fill up one of the branches and
 signal a runtime error from there.")
 
+(defvar *silent-compilation* nil
+  "If non-nil, don't issue compiler warnings.")
+
 ;; The type system.  NIL means no value fits, T means all values fit.
 ;; A list of symbols means values of all listed types fit.
 
@@ -43,6 +46,14 @@ signal a runtime error from there.")
     ((eql a t) t)
     ((eql b t) t)
     (t (union a b))))
+
+(defun type-union* (a b)
+  (cond
+    ((or (and (equal a '(integer))
+	      (equal b '(boolean)))
+	 (and (equal a '(boolean))
+	      (equal b '(integer)))) '(integer))
+    (t (type-union a b))))     
 
 (defun type<= (a b)
   (cond
@@ -134,12 +145,13 @@ applied to the parallel elements in LISTS."
     
 
 (defun bst-compile-warning (format-string &rest args)
-  (signal (make-condition 'bst-compiler-warning
-			  :message
-			  (concatenate 'string
-				       (format nil " In BST body ~S:~%  "
-					       (currently-compiled-body-with-markup))
-				       (apply 'format nil format-string args)))))
+  (unless *silent-compilation*
+    (signal (make-condition 'bst-compiler-warning
+			    :message
+			    (concatenate 'string
+					 (format nil " In BST body ~S:~%  "
+						 (currently-compiled-body-with-markup))
+					 (apply 'format nil format-string args))))))
 
 (defun bst-compile-error (format-string &rest args)
   (error (make-condition 'bst-compiler-error
@@ -235,6 +247,31 @@ bound variables onto *FORM-STACK*."
     (setq *form-stack* (nconc (nreverse mvforms)
 			      *form-stack*))))
 
+(defun coerce-form (lisp-form available-type requested-type)
+  "Return a Lisp form that computes the coercion of LISP-FORM from
+AVAILABLE-TYPE to REQUESTED-TYPE.  As a secondary value, return the
+effective type."
+  (let* ((effective-type (type-intersection requested-type available-type)))
+    ;; The handling of the special case boolean/integer is only a hack.
+    ;; The type system should be improved instead.
+    (cond
+      ((and (type= available-type '(integer))
+	    (type= requested-type '(boolean)))
+       (values `(> ,lisp-form 0) '(boolean)))
+      ((and (type= available-type '(boolean))
+	    (type= requested-type '(integer)))
+       (values (case lisp-form
+		 ((nil) 0)
+		 ((t)   1)
+		 (t `(if ,lisp-form 1 0)))
+	       '(integer)))
+      ((null-type effective-type)
+       (bst-compile-error "Type mismatch: expecting ~A, got ~A."
+			  requested-type available-type))
+      (t
+       (values lisp-form effective-type)))))
+
+
 (defun pop-form (type &key (need-variable nil) (when-empty :borrow)
 		 (assigned-variables ()))
   "Pop a Lisp form delivering a single value of given TYPE from
@@ -260,26 +297,12 @@ the actual type of the delivered value, SIDE-EFFECTS, and EMPTY-P."
 	(let ((top-mvform (pop *form-stack*)))
 	  (labels ((return-the-form ()
 		     (let* ((available-type (car (mvform-types top-mvform)))
-			    (effective-type (type-intersection type available-type))
 			    (lisp-form (mvform-form top-mvform))
 			    (side-effects (mvform-side-effects top-mvform)))
-   ;; The handling of the special case boolean/integer is only a hack.
-		       ;; The type system should be improved instead.
-		       (cond
-			 ((and (type= available-type '(integer))
-			       (type= type '(boolean)))
-			  (return-from pop-form
-			    (values `(> ,lisp-form 0) '(boolean) side-effects)))
-			 ((and (type= available-type '(boolean))
-			       (type= type '(integer)))
-			  (return-from pop-form
-			    (values `(if ,lisp-form 1 0) '(boolean) side-effects)))
-			 ((null-type effective-type)
-			  (bst-compile-error "Type mismatch: expecting ~A, got ~A."
-					     type available-type))
-			 (t
-			  (return-from pop-form
-			    (values lisp-form effective-type side-effects)))))))
+		     (multiple-value-bind (coerced-form effective-type)
+			 (coerce-form lisp-form available-type type)
+		       (return-from pop-form
+			 (values coerced-form effective-type side-effects))))))
 	    (cond
 	      ((not (null (intersection assigned-variables
 					(side-effects-used-variables
@@ -360,7 +383,7 @@ the actual type of the delivered value, SIDE-EFFECTS, and EMPTY-P."
 	  lists
 	  :initial-value ()))
 
-(defun package-as-body ()
+(defun package-as-body (&key (expected-result-types nil expected-result-types-p))
   "Build a Lisp body corresponding to the computation captured in
 *FORM-BINDINGS* and *FORM-STACK*.  The Lisp body contains free
 variables corresponding to *BORROWED-VARIABLES*.  Return five values:
@@ -369,13 +392,17 @@ FREE-VARIABLES."
   (let ((*form-stack* *form-stack*)
 	(*form-bindings* *form-bindings*)
 	(result-mvforms ()))
-    (loop as mvform = (pop-single-value-form t :need-variable nil :when-empty nil) ; modifies the place *form-stack*
+    (loop as expected-result-type = (if expected-result-types-p
+					(pop expected-result-types)
+					t)
+	  as mvform = (pop-single-value-form expected-result-type
+					     :need-variable nil :when-empty nil)
+					; modifies the place *form-stack*
 	  while mvform
 	  do (push mvform result-mvforms))
-    (let ((body (case (length result-mvforms)
-		  (0 ())
-		  (1 (list (mvform-form (car result-mvforms))))
-		  (t (list `(values ,@(mapcar #'mvform-form result-mvforms))))))
+    (when expected-result-types-p
+      (assert (null expected-result-types)))
+    (let ((body (build-values-body (mapcar #'mvform-form result-mvforms)))
 	  (side-effects (apply #'max-side-effects (mapcar #'mvform-side-effects result-mvforms)))
 	  (let-bindings ()))
       (labels ((make-let* ()
@@ -430,29 +457,26 @@ FREE-VARIABLES."
 		side-effects
 		(mapcar #'variable-name *borrowed-variables*))))))
 
-(defun package-as-form ()
+(defun package-as-form (&rest args)
   "Build a Lisp form corresponding to the computation captured in
 *FORM-BINDINGS* and *FORM-STACK*.  The Lisp form contains free
-variables corresponding to *BORROWED-VARIABLES*.  Return four values:
-LISP-FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS."
+variables corresponding to *BORROWED-VARIABLES*.  Return five values:
+LISP-FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS, and FREE-VARIABLES."
   (multiple-value-bind (body argument-types result-types
 			     side-effects free-variables)
-      (package-as-body)
-    (values (case (length body)
-	      (0 `(values))
-	      (1 (car body))
-	      (t `(progn ,@body)))
+      (apply #'package-as-body args)
+    (values (build-progn-form body)
 	    argument-types result-types side-effects
 	    free-variables)))
  
-(defun package-as-procedure (name)
+(defun package-as-procedure (name &rest args)
   "Build a DEFUN NAME form from *FORM-BINDINGS*, *BORROWED-VARIABLES*
 and *FORM-STACK*.  If NAME is nil, build a LAMBDA form instead.
 Return four values: DEFUN-OR-LAMBDA-FORM, ARGUMENT-TYPES,
 RESULT-TYPES, SIDE-EFFECTS."
   (multiple-value-bind (body argument-types result-types
 			     side-effects free-variables)
-      (package-as-body)
+      (apply #'package-as-body args)
     (values `(,@(if name `(defun ,name) `(lambda))
 	      ,free-variables
 	      ,@body)
@@ -495,7 +519,7 @@ special forms by directly manipulating the current compiler data.")
 	  (pop-form type-1 :need-variable nil)
 	(let ((form (cond
 		      ((type= type-2 '(boolean))
-		       `(eql ,form-1 ,form-2))
+		       `(eql ,form-1 ,form-2)) ;FIXME: wrong
 		      ((type= type-2 '(integer))
 		       `(= ,form-1 ,form-2))
 		      ((type= type-2 '(string))
@@ -513,7 +537,13 @@ special forms by directly manipulating the current compiler data.")
       ;;(format t "var: ~S value: ~S~%" var value-form)
       (let* ((fun (get-bst-function var))
 	     (name (bst-function-name fun))
+	     type 
 	     assoc)
+	(unless (member (bst-function-type fun) '(int-global-var str-global-var
+						  int-entry-var str-entry-var))
+	  (bst-compile-error "Bad function to assign to: ~A is a ~A"
+			     var (bst-function-type fun)))
+	(setq type (car (bst-function-result-types fun)))
 	(labels ((compute-side-effects (assigned-thing value-mvform)
 		   (max-side-effects
 		    (mvform-side-effects value-mvform)
@@ -523,10 +553,10 @@ special forms by directly manipulating the current compiler data.")
 	  (cond
 	    ((bst-function-constant-p fun)
 	     ;; do nothing
-	     (pop-single-value-form t :need-variable :if-side-effects))
+	     (pop-single-value-form type :need-variable :if-side-effects))
 	    ((setq assoc (assoc name *lexical-variables* :test 'string-equal))
 	     (let ((var-name (variable-name (cdr assoc)))
-		   (value-mvform (pop-single-value-form t :need-variable nil)))
+		   (value-mvform (pop-single-value-form type :need-variable nil)))
 	       (push-mvform :form `(setq ,var-name
 				    ,(mvform-form value-mvform))
 			    :types ()
@@ -534,7 +564,7 @@ special forms by directly manipulating the current compiler data.")
 	    ((member (bst-function-name fun) *lexicals* :test 'string-equal)
 	     (let ((var (make-variable :name (bst-name-to-lisp-name name)
 				       :type (car (bst-function-result-types fun))))
-		   (value-mvform (pop-single-value-form t :need-variable nil :when-empty nil)))
+		   (value-mvform (pop-single-value-form type :need-variable nil :when-empty nil)))
 	       (if (not value-mvform)
 		   ;; We have an assignment of a freshly popped formal
 		   ;; argument to a lexical variable.  So simply use
@@ -546,7 +576,7 @@ special forms by directly manipulating the current compiler data.")
 	       (push (cons name var) *lexical-variables*)))
 	    (t
 	     (let* ((setter-form-maker (bst-function-setter-form-maker fun))
-		    (value-mvform (pop-single-value-form t :need-variable nil))
+		    (value-mvform (pop-single-value-form type :need-variable nil))
 		    (setter-form (funcall setter-form-maker (mvform-form value-mvform))))
 	       (incf (bst-function-num-assignments fun))
 	       (setf (bst-function-assigned-value-form fun) (mvform-form value-mvform))
@@ -562,19 +592,26 @@ special forms by directly manipulating the current compiler data.")
       (bst-compile-error "~A is a function that could not be compiled" name))
     function))
 
-(defun bst-compile-literal (literal stack &key (borrowing-allowed t))
+(defun compile-literal (literal)
+  "Compile a BST function LITERAL, which is a symbol, designating a
+BST function, or a list (a function body).  Record the computation in
+the usual special variables."
+  (etypecase literal
+    (list (compile-body literal))
+    (symbol (compile-funcall literal))))
+
+(defun bst-compile-literal (literal stack &rest args &key (borrowing-allowed t) &allow-other-keys)
   "Compile a BST function LITERAL, which is a symbol, designating a
 BST function, or a list (a function body).  Return five values: a Lisp
 FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P, and FREE-VARIABLES."
+  (remf args :borrowing-allowed)
   (let ((*form-stack* stack)
 	(*borrowed-variables* ())
 	(*form-bindings* ()))
-    (etypecase literal
-      (list (compile-body literal))
-      (symbol (compile-funcall literal)))
+    (compile-literal literal)
     (assert (or borrowing-allowed 
 		(null *borrowed-variables*)))
-    (package-as-form)))
+    (apply #'package-as-form args)))
 
 (defvar *compiling-while-body* nil
   "True if compiling the body of a while$ function.")
@@ -588,13 +625,15 @@ FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P, and FREE-VARIABLES."
 
       ;; First pass: compute the arity of both branches
       (multiple-value-bind (else-form else-arg-types else-res-types else-side-effects)
-	  (let ((*lexicals* ())) ; don't introduce local lexical bindings
+	  (let ((*lexicals* ())	; don't introduce local lexical bindings
+		(*silent-compilation* t))
 	    (bst-compile-literal else-literal ()))
-;;(format t "~&;; else-form ~S is ~S --> ~S~%" else-literal else-arg-types else-res-types)
+	;;(format t "~&;; else-form ~S is ~S --> ~S~%" else-literal else-arg-types else-res-types)
 	(multiple-value-bind (then-form then-arg-types then-res-types then-side-effects)
-	    (let ((*lexicals* ())) ; don't introduce local lexical bindings
+	    (let ((*lexicals* ()) ; don't introduce local lexical bindings
+		  (*silent-compilation* t))
 	      (bst-compile-literal then-literal ()))
-;;(format t "~&;; then-form ~S is ~S --> ~S~%" then-literal then-arg-types then-res-types)
+	  ;;(format t "~&;; then-form ~S is ~S --> ~S~%" then-literal then-arg-types then-res-types)
 	  ;; Introduce lexical binding for the union of all
 	  ;; assigned-to variables in both branches.
 	  (let ((assigned-variables
@@ -616,7 +655,9 @@ FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P, and FREE-VARIABLES."
 		(then-balance (- (length then-res-types) (length then-arg-types)))
 		(else-balance (- (length else-res-types) (length else-arg-types)))
 		(then-stack ())
-		(else-stack ()))
+		(else-stack ())
+		(fixed-then-res-types then-res-types)
+		(fixed-else-res-types else-res-types))
 	    (flet ((build-stacks (&key then-exception else-exception)
 		     (do ((then-arg-types (reverse then-arg-types) (cdr then-arg-types))
 			  (else-arg-types (reverse else-arg-types) (cdr else-arg-types)))
@@ -631,86 +672,102 @@ FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P, and FREE-VARIABLES."
 							   :need-variable :if-side-effects)))
 			 (push type arg-types)
 			 (unless (and then-exception (null then-arg-types))
-			   (push form then-stack))
+			   (push form then-stack)
+			   (when (null then-arg-types)
+			     (push (car (mvform-types form)) fixed-then-res-types)))
 			 (unless (and else-exception (null else-arg-types))
-			   (push form else-stack))))))
-	    (cond ((= then-balance else-balance)
-		   ;; This is the regular case: We have the same
-		   ;; net number of values pushed to the stack.
-		   ;; We compute the arg types and fill up the
-		   ;; shorter arg list.
-		   (build-stacks))
-		  ((and *compiling-while-body*
-			(> else-balance 0)
-			(= (length then-res-types) (length else-res-types)))
-		   ;; This is a special hack that allows us to compile
-		   ;; the FORMAT.NAMES function.  This function has a
-		   ;; WHILE$ that pushes exactly one value over all
-		   ;; runs; this is accomplished by an IF$ whose THEN
-		   ;; branch is STRING->STRING and whose ELSE branch
-		   ;; is NIL->STRING.
-		   ;; FIXME: This could be easily generalized on a better day.
-		   (bst-compile-warning " Warning: Employing the producer/modifier while loop trick.~%")
-		   (build-stacks :else-exception t)
-		   ;;(format *error-output* "~&ARG-TYPES: ~S~%THEN-STACK: ~S~%ELSE-STACK: ~S~%"
-		   ;; arg-types then-stack else-stack))
-		   (setq *compiling-while-body* else-balance))
-		  (*relaxed-compilation*
-		   (bst-compile-warning
-		    "Warning: THEN and ELSE functions deliver different net number of values.~%~
-                     ~&  THEN function ~S~%  is ~:A -> ~:A~%~
-                     ~&  and ELSE function ~S~%  is ~:A -> ~:A.~%~
+			   (push form else-stack)
+			   (when (null else-arg-types)
+			     (push (car (mvform-types form)) fixed-else-res-types)))))))
+	      (cond ((= then-balance else-balance)
+		     ;; This is the regular case: We have the same
+		     ;; net number of values pushed to the stack.
+		     ;; We compute the arg types and fill up the
+		     ;; shorter arg list.
+		     (build-stacks))
+		    ((and *compiling-while-body*
+			  (> else-balance 0)
+			  (= (length then-res-types) (length else-res-types)))
+		     ;; This is a special hack that allows us to compile
+		     ;; the FORMAT.NAMES function.  This function has a
+		     ;; WHILE$ that pushes exactly one value over all
+		     ;; runs; this is accomplished by an IF$ whose THEN
+		     ;; branch is STRING->STRING and whose ELSE branch
+		     ;; is NIL->STRING.
+		     ;; FIXME: This could be easily generalized on a better day.
+		     (bst-compile-warning " Warning: Employing the producer/modifier while loop trick.~%")
+		     (build-stacks :else-exception t)
+		     ;;(format *error-output* "~&ARG-TYPES: ~S~%THEN-STACK: ~S~%ELSE-STACK: ~S~%"
+		     ;; arg-types then-stack else-stack))
+		     (setq *compiling-while-body* else-balance))
+		    (*relaxed-compilation*
+		     (bst-compile-warning
+		      "Warning: THEN and ELSE functions deliver different net number of values.~%~
+                     ~&  THEN function ~:S~%  is ~:A -> ~:A~%~
+                     ~&  and ELSE function ~:S~%  is ~:A -> ~:A.~%~
                      ~&  Because *RELAXED-COMPILATION* is true, we try to fix this~%~
                      ~&  by filling up the ~A function.  (This can cause errors later.)~%"
-					then-literal
-					then-arg-types then-res-types
-					else-literal
-					else-arg-types else-res-types
-					(if (< then-balance else-balance)
-					    "THEN" "ELSE"))
-		   (build-stacks)
-		   (let ((dummy-items
-			  (loop repeat (abs (- else-balance then-balance))
-				collect (make-mvform :form `(error "This is the result of a slightly broken BibTeX style file.")
-						     :types (list t)
-						     ;;:side-effects (make-instance 'side-effects :side-effects-p t)
-						     ))))
-		     (if (< then-balance else-balance)
-			 (setf then-stack
-			       (nconc then-stack dummy-items))
-			 (setf else-stack
-			       (nconc else-stack dummy-items)))))
-		  (t
-		   (bst-compile-error "THEN function ~S ~%  == ~S~%  and ELSE function ~S ~%  == ~S~%  deliver ~
+		      then-literal
+		      then-arg-types then-res-types
+		      else-literal
+		      else-arg-types else-res-types
+		      (if (< then-balance else-balance)
+			  "THEN" "ELSE"))
+		     (build-stacks)
+		     (let ((dummy-items
+			    (loop repeat (abs (- else-balance then-balance))
+				  collect (make-mvform :form `(error "This is the result of a slightly broken BibTeX style file.")
+						       :types nil ;(list t)
+						       ;;:side-effects (make-instance 'side-effects :side-effects-p t)
+						       )))
+			   (dummy-types
+			    (loop repeat (abs (- else-balance then-balance))
+				  collect nil)))
+		       (if (< then-balance else-balance)
+			   (setf then-stack
+				 (nconc then-stack dummy-items)
+				 fixed-then-res-types
+				 (nconc dummy-types fixed-then-res-types))
+			   (setf else-stack
+				 (nconc else-stack dummy-items)
+				 fixed-else-res-types
+				 (nconc dummy-types fixed-else-res-types)))))
+		    (t
+		     (bst-compile-error "THEN function ~:S ~%  == ~S~%  and ELSE function ~:S ~%  == ~S~%  deliver ~
 different net number of values: ~%  ~:A -> ~:A vs. ~:A -> ~:A"
-				      then-literal then-form else-literal else-form
-				      then-arg-types then-res-types
-				      else-arg-types else-res-types))))
-	    (multiple-value-bind (else-form else-arg-types
-					    else-res-types else-side-effects)
-		(bst-compile-literal else-literal else-stack :borrowing-allowed nil)
-	      (declare (ignore else-arg-types))
-	      (multiple-value-bind (then-form then-arg-types
-					      then-res-types then-side-effects)
-		  (bst-compile-literal then-literal then-stack :borrowing-allowed nil)
-		(declare (ignore then-arg-types))
-		(let* ((res-types (mapcar #'type-union then-res-types else-res-types))
-		       (then-or-else-side-effects
-			(max-side-effects then-side-effects else-side-effects)))
-		  (setf (side-effects-unconditionally-assigned-variables then-or-else-side-effects)
-			(intersection (side-effects-unconditionally-assigned-variables then-side-effects)
-				      (side-effects-unconditionally-assigned-variables else-side-effects)
-				      :test 'equalp)
-			(side-effects-variables-used-before-assigned then-or-else-side-effects)
-			(union (side-effects-variables-used-before-assigned then-side-effects)
-			       (side-effects-variables-used-before-assigned else-side-effects)
-			       :test 'equalp))
-		  (let ((side-effects
-			 (max-side-effects (mvform-side-effects val-mvform)
-					   then-or-else-side-effects)))
-		    (push-mvform :form (build-if-form (mvform-form val-mvform) then-form else-form)
-				 :types res-types
-				 :side-effects side-effects))))))))))   
+					then-literal then-form else-literal else-form
+					then-arg-types then-res-types
+					else-arg-types else-res-types))))
+	    (let ((res-types (mapcar #'type-union* fixed-then-res-types fixed-else-res-types)))
+	      (multiple-value-bind (else-form else-arg-types
+					      else-res-types else-side-effects)
+		  (bst-compile-literal else-literal else-stack :borrowing-allowed nil
+				       :expected-result-types res-types)
+		(declare (ignore else-arg-types else-res-types))
+		(multiple-value-bind (then-form then-arg-types
+						then-res-types then-side-effects)
+		    (bst-compile-literal then-literal then-stack :borrowing-allowed nil
+					 :expected-result-types res-types)
+		  (declare (ignore then-arg-types then-res-types))
+		  (let* ((then-or-else-side-effects
+			  (max-side-effects then-side-effects else-side-effects)))
+		    ;; MAX-SIDE-EFFECTS assumes a sequence of
+		    ;; operations; for IF$, we need to fix some aspects
+		    ;; of the computed side-effects.
+		    (setf (side-effects-unconditionally-assigned-variables then-or-else-side-effects)
+			  (intersection (side-effects-unconditionally-assigned-variables then-side-effects)
+					(side-effects-unconditionally-assigned-variables else-side-effects)
+					:test 'equalp)
+			  (side-effects-variables-used-before-assigned then-or-else-side-effects)
+			  (union (side-effects-variables-used-before-assigned then-side-effects)
+				 (side-effects-variables-used-before-assigned else-side-effects)
+				 :test 'equalp))
+		    (let ((side-effects
+			   (max-side-effects (mvform-side-effects val-mvform)
+					     then-or-else-side-effects)))
+		      (push-mvform :form (build-if-form (mvform-form val-mvform) then-form else-form)
+				   :types res-types
+				   :side-effects side-effects)))))))))))   
 
 (define-bst-special-form "pop$"
     (pop-form t :need-variable :if-side-effects))
@@ -718,23 +775,30 @@ different net number of values: ~%  ~:A -> ~:A vs. ~:A -> ~:A"
 (define-bst-special-form "skip$"
     nil)
 
-(defun bst-compile-literal-as-while-body (literal)
-  "Compile a BST function LITERAL, which is a symbol, designating a
-BST function, or a list (a function body).  Return five values: a Lisp
-BODY, LOOP-VARS, LOOP-VAR-TYPES, INIT-TYPES and SIDE-EFFECTS."
-  (let ((*form-stack* ())
-	(*borrowed-variables* ())
-	(*form-bindings* ())
-	(*compiling-while-body* t))
-    (etypecase literal
-      (symbol (compile-funcall literal))
-      (cons (compile-body literal)))
-    (let* ((mvforms (mapcar (lambda (var)
-			      (pop-single-value-form (variable-type var)))
-			    (reverse *borrowed-variables*)))
-	   (psetq-args (mapcan (lambda (var mvform)
-				 (list (variable-name var)
-				       (mvform-form mvform)))
+(defun assign-loop-variables ()
+  "For every borrowed variable, pop a form off the stack.  Push a
+PSETQ form that assigns the values of the popped forms to the borrowed
+variables.  If there are not as many values on the stack as borrowed
+variables, return :NOT-BALANCED; in this case the current computation
+is left corrupted.  Otherwise return the number of assignments (this
+can be lower than the number of borrowed variables)."
+  (let ((mvforms
+	 (mapcar (lambda (var)
+		   (or (pop-single-value-form (variable-type var) :when-empty nil)
+		       (return-from assign-loop-variables :not-balanced)))
+		 (reverse *borrowed-variables*))))
+    ;; See if there's anything left on the stack
+    (let ((remaining-form (pop-single-value-form t :when-empty nil)))
+      (when remaining-form
+	(return-from assign-loop-variables :not-balanced)))
+    (let* ((psetq-args (mapcan (lambda (var mvform)
+				 (if (eql (mvform-form mvform)
+					  (variable-name var))
+				     ;; loop variable is unchanged; no
+				     ;; assignment needed
+				     '()
+				     (list (variable-name var)
+					   (mvform-form mvform))))
 			       (reverse *borrowed-variables*)
 			       mvforms))
 	   (assigned-variables
@@ -743,14 +807,32 @@ BODY, LOOP-VARS, LOOP-VAR-TYPES, INIT-TYPES and SIDE-EFFECTS."
 	    (apply #'max-side-effects
 		   (make-instance 'side-effects :assigned-variables assigned-variables)
 		   (mapcar #'mvform-side-effects mvforms))))
-      (case (length *borrowed-variables*)
+      (case (length psetq-args)
 	(0 nil)
-	(1 (push-mvform :form `(setq ,@psetq-args)
+	(2 (push-mvform :form `(setq ,@psetq-args)
 			:types () 
 			:side-effects side-effects))
 	(t (push-mvform :form `(psetq ,@psetq-args)
 			:types ()
-			:side-effects side-effects))))
+			:side-effects side-effects)))
+      (/ (length psetq-args) 2))))
+
+(defun bst-compile-literal-as-while-body (literal loop-vars loop-var-types)
+  "Compile a BST function LITERAL, which is a symbol, designating a
+BST function, or a list (a function body).  Return five values: a Lisp
+BODY, LOOP-VARS, LOOP-VAR-TYPES, INIT-TYPES and SIDE-EFFECTS."
+  (let ((*form-stack*
+	 (mapcar (lambda (var type)
+		   (make-mvform :form var :types (list type)))
+		 loop-vars loop-var-types))
+	(*borrowed-variables*
+	 (mapcar (lambda (var type)
+		   (make-variable :name var :type type))
+		 loop-vars loop-var-types))
+	(*form-bindings* ())
+	(*compiling-while-body* t))
+    (compile-literal literal)
+    (assign-loop-variables)
     (multiple-value-bind (body arg-types res-types
 			       side-effects free-variables)
 	(package-as-body)
@@ -758,7 +840,7 @@ BODY, LOOP-VARS, LOOP-VAR-TYPES, INIT-TYPES and SIDE-EFFECTS."
 	;; Since the while-body packager eats as many values as the
 	;; function takes, so we only check whether there remain
 	;; values...
-	(bst-compile-error "BODY function ~S is not stack-balanced: ~S --> ~S"
+	(bst-compile-error "BODY function ~:S is not stack-balanced: ~:S --> ~:S"
 			   literal arg-types res-types))
       (values body free-variables
 	      arg-types
@@ -766,51 +848,147 @@ BODY, LOOP-VARS, LOOP-VAR-TYPES, INIT-TYPES and SIDE-EFFECTS."
 		  ;; this many are uninitialized
 		  (nbutlast arg-types *compiling-while-body*)
 		  arg-types)
-	      side-effects))))      
+	      side-effects))))
 
+(defun bst-compile-literal-as-while-predicate (pred-literal)
+  (let ((*form-stack* ())
+	(*borrowed-variables* ())
+	(*form-bindings* ()))
+    (compile-literal pred-literal)
+    (let ((predicate-value-form
+	   (pop-single-value-form '(boolean)
+				  :when-empty nil
+				  :assigned-variables
+				  (mapcar #'variable-name *borrowed-variables*)
+				  :need-variable :if-side-effects)))
+      (unless predicate-value-form
+	(bst-compile-error "PREDICATE function ~:S~%  does not deliver a (boolean or integer) stack value; we cannot handle this"
+			   pred-literal))
+      (let ((num-assignments (assign-loop-variables)))
+	(when (eql num-assignments :not-balanced)
+	  (throw 'complicated-loop :not-balanced))
+	(unless (zerop num-assignments)
+	  (throw 'complicated-loop :assignments-in-predicate))
+	(push-form predicate-value-form)
+	(multiple-value-bind (pred-form pred-arg-types pred-res-types
+					pred-side-effects pred-free-variables)
+	    (package-as-form)
+	  (declare (ignore pred-res-types))
+	  (setq pred-side-effects
+		(remove-variables-from-side-effects pred-free-variables pred-side-effects))
+	  (values pred-form pred-free-variables
+		  pred-arg-types pred-side-effects))))))
+
+(defun current-stack-as-values-list ()
+  "Pop all value forms off the stack, collect them in a list suitable
+for VALUES and push them again onto the stack.  Return two values: a
+list of forms and a list of their types."
+  (let ((result-mvforms '()))
+    (loop as mvform = (pop-single-value-form t :need-variable t :when-empty nil)
+	  while mvform
+	  do (push mvform result-mvforms))
+    (dolist (mvform result-mvforms)
+      (push-form mvform))
+    (values (mapcar #'mvform-form result-mvforms)
+	    (mapcar (lambda (mvform)
+		      (car (mvform-types mvform))) result-mvforms))))    
+    
 (define-bst-special-form "while$"
     (let* ((body-literal (pop-literal))
 	   (pred-literal (pop-literal)))
-      (multiple-value-bind (pred-form pred-arg-types
-				      pred-res-types pred-side-effects)
-	  (bst-compile-literal pred-literal ())
-	(unless (null pred-arg-types)
-	  (bst-compile-error "PREDICATE function ~S~%  takes stack values: ~S"
-			     pred-literal pred-arg-types))
-	(unless (and (= (length pred-res-types) 1)
-		     (type= (car pred-res-types) '(boolean)))
-	  (bst-compile-error "PREDICATE function ~S~%  does not deliver exactly one boolean stack value: ~S"
-			     pred-literal pred-res-types))
-	(multiple-value-bind (body loop-vars loop-var-types init-types
-				   body-side-effects)
-	    (bst-compile-literal-as-while-body body-literal)
-	  ;; filter out locals from the list of variables assigned to
-	  ;; in the body
-	  (setq body-side-effects
-		(remove-variables-from-side-effects loop-vars body-side-effects))
-	  (let ((init-clauses
-		 (loop for var in loop-vars
-		       as types = init-types then (cdr types)
-		       collect (if (null types)
-				   var
-				   `(,var
-				     ,(pop-form (car types))))))
-		(values-body
-		 (case (length loop-var-types)
-		   (0 ())
-		   (1 (list (car loop-vars)))
-		   (2 (list `(values ,@loop-vars)))))
-		(side-effects
-		 (max-side-effects pred-side-effects body-side-effects)))
-	    ;; Only pred is guaranteed to execute, so:
-	    (setf (side-effects-unconditionally-assigned-variables side-effects)
-		  (side-effects-unconditionally-assigned-variables pred-side-effects))
-	    (push-mvform :form `(do ,init-clauses
-				 (,(build-not-form pred-form) ,@values-body)
-				 ,@body)
-			 :types loop-var-types
-			 :side-effects side-effects)))))) 
-
+      (flet ((make-init-clauses (loop-vars init-types)
+	       (loop for var in loop-vars
+		     as types = init-types then (cdr types)
+		     collect (if (null types)
+				 var
+				 `(,var ,(pop-form (car types)))))))
+	(when
+	    (catch 'complicated-loop
+	      ;; Try to compile the predicate as a Lisp form
+	      (multiple-value-bind (pred-form pred-free-variables
+					      pred-arg-types pred-side-effects)
+		  (bst-compile-literal-as-while-predicate pred-literal)
+		;; Compile body
+		(multiple-value-bind (body loop-vars loop-var-types init-types
+					   body-side-effects)
+		    (bst-compile-literal-as-while-body body-literal
+						       pred-free-variables
+						       pred-arg-types)
+		  ;; filter out locals from the list of variables assigned to
+		  ;; in the body
+		  (setq body-side-effects
+			(remove-variables-from-side-effects loop-vars body-side-effects))
+		  (let ((init-clauses (make-init-clauses loop-vars init-types))
+			(values-body  (build-values-body loop-vars))
+			(side-effects
+			 (max-side-effects pred-side-effects body-side-effects)))
+		    ;; Only pred is guaranteed to execute, so:
+		    (setf (side-effects-unconditionally-assigned-variables side-effects)
+			  (side-effects-unconditionally-assigned-variables pred-side-effects))
+		    (push-mvform :form `(do ,init-clauses
+					 (,(build-not-form pred-form) ,@values-body)
+					 ,@body)
+				 :types loop-var-types
+				 :side-effects side-effects))))
+	      nil)
+	  ;; Complicated loop
+	  (multiple-value-bind (loop-form loop-vars loop-var-types
+					  return-types side-effects)
+	      (let ((*form-stack* ())
+		    (*borrowed-variables* ())
+		    (*form-bindings* ()))
+		(compile-literal pred-literal)
+		;; Compute the results and the side effects of the predicate
+		(multiple-value-bind (dummy-lisp-form dummy-arg-types dummy-res-types
+						      predicate-side-effects)
+		    (package-as-form)
+		  (declare (ignore dummy-lisp-form dummy-arg-types dummy-res-types))
+		  (let* ((predicate-form (pop-single-value-form '(boolean))) 
+			 (borrowed-variables-at-return *borrowed-variables*)
+			 (return-form (list 'return nil))) ; will be mutated later
+		    (multiple-value-bind (values-list-at-return types-list-at-return)
+			(current-stack-as-values-list)
+		      (push-mvform :form `(when ,(build-not-form
+						  (mvform-form predicate-form))
+					   ,return-form)
+				   :types '()
+				   :side-effects (max-side-effects
+						  (mvform-side-effects predicate-form)
+						  (make-instance 'side-effects
+								 :side-effects-p t)))
+		      (compile-literal body-literal)
+		      (assign-loop-variables)
+		      (multiple-value-bind (body arg-types res-types side-effects free-vars)
+			  (package-as-body)
+			(declare (ignore res-types))
+			;; Handle the variables that have been
+			;; borrowed after emitting the RETURN form
+			(let* ((newly-borrowed-variables
+				(ldiff *borrowed-variables* borrowed-variables-at-return))
+			       (values-list
+				(nconc (mapcar #'variable-name newly-borrowed-variables)
+				       values-list-at-return))
+			       (returned-types
+				(nconc (mapcar #'variable-type newly-borrowed-variables)
+				       types-list-at-return)))
+			  ;; Fix the return form
+			  (setf (cdr return-form)
+				(build-values-body values-list))
+			  ;; Only the predicate is guaranteed to
+			  ;; execute
+			  (setf (side-effects-unconditionally-assigned-variables side-effects)
+				(side-effects-unconditionally-assigned-variables predicate-side-effects))
+			  (values `(loop ,@body)
+				  free-vars
+				  arg-types
+				  returned-types
+				  side-effects)))))))
+	    (setq side-effects
+		  (remove-variables-from-side-effects loop-vars side-effects))
+	    (push-mvform :form `(let ,(make-init-clauses loop-vars loop-var-types)
+				 ,loop-form)
+			 :types return-types
+			 :side-effects side-effects))))))
 
 ;;;
 
@@ -830,9 +1008,13 @@ BODY, LOOP-VARS, LOOP-VAR-TYPES, INIT-TYPES and SIDE-EFFECTS."
       (t
        (let* ((bst-function (get-bst-function function-name))
 	      (arg-types (bst-function-argument-types bst-function))
+	      (reversed-pop-form-args-list
+	       (reverse (bst-function-pop-form-args bst-function)))
+					; may be shorter than arg-types
 	      (arg-mvforms (nreverse
 			    (mapcar (lambda (type)
-				      (pop-single-value-form type :need-variable nil))
+				      (apply #'pop-single-value-form type
+					     (pop reversed-pop-form-args-list)))
 				    (reverse arg-types)))))
 	 (push-mvform
 	  :form (if (bst-function-lisp-form-maker bst-function)
@@ -864,7 +1046,7 @@ BODY, LOOP-VARS, LOOP-VAR-TYPES, INIT-TYPES and SIDE-EFFECTS."
 			:literal form :types '((body))))
 	  ((symbolp form)		;function call
 	   (compile-funcall form))
-	  (t (bst-compile-error "Illegal form in BST function body: ~S" form)))))))
+	  (t (bst-compile-error "Illegal form in BST function body: ~:S" form)))))))
 
 (defun bst-compile-defun (name function-definition)
   "Compile a BST wizard-defined function of given NAME and
