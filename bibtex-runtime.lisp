@@ -32,6 +32,7 @@
 
 (defun bib-warn (format-control &rest args)
   "Emit a warning."
+  (format *error-output* "Warning--")
   (apply #'format *error-output* format-control args)
   (terpri *error-output*)
   (mark-warning))
@@ -137,9 +138,12 @@ right delimiter."
        (unless macro
 	 (bib-error "Expected a string, a number, or a macro name"))
        (let ((definition (gethash macro *bib-macros*)))
-	 (when (null definition)
-	   (bib-error "Macro ~A undefined" macro))
-	 definition)))))
+	 (cond
+	   ((null definition)
+	    (bib-warn "string name \"~A\" is undefined" macro)
+	    "")
+	   (t
+	    definition)))))))
 
 (defconstant +bib-whitespace-character-list+
   '(#\Newline #\Space #\Linefeed #\Return #\Page))
@@ -301,6 +305,33 @@ non-nil, remove any leading or trailing whitespace."
 	       (setf (gethash key entry) value)))
     entry))
 
+(defun get-merged-bib-entry (key)
+  "Compute a bib entry where all crossrefs have been merged in."
+  (labels ((get-entry (key parent-keys)
+	     (let ((entry (gethash key *bib-database*)))
+	       (cond
+		 ((not entry)
+		  (bib-warn "I didn't find a database entry for ~A"
+			    key)
+		  nil)
+		 (t
+		  (let ((crossref (gethash "CROSSREF" entry)))
+		    (cond
+		      ((not crossref)
+		       entry)
+		      ((member crossref parent-keys :test 'string-equal)
+		       ;; circular cross reference
+		       (bib-warn "I detected a circular cross-reference to ~A"
+				 crossref)
+		       nil)
+		      (t
+		       (let ((crossref-entry
+			      (get-entry crossref (cons key  parent-keys))))
+			 (if crossref-entry
+			     (merge-bib-entries entry crossref-entry)
+			     entry))))))))))
+    (get-entry key '())))
+
 (defun cited-bib-entries (cite-keys &key
 			  (min-crossrefs 2))
   "Return a vector of the entries in *BIB-DATABASE* whose keys are
@@ -311,8 +342,8 @@ well."
   (let ((bib-entries (make-array 0 :adjustable t :fill-pointer 0)))
     (cond
       ((eql cite-keys t)
-       (loop for entry being each hash-value in *bib-database*
-	     do (vector-push-extend entry bib-entries)))
+       (loop for key being each hash-key in *bib-database*
+	     do (vector-push-extend (get-merged-bib-entry key) bib-entries)))
       (t
        (let ((crossref-hash (make-hash-table :test 'equalp))
 	     (processed-keys '()))
@@ -332,42 +363,16 @@ well."
 			      (count-crossrefs crossref))))))))
 	   (dolist (key cite-keys)
 	     (count-crossrefs key)))
-	 (labels ((get-entry (key parent-keys)
-		    (let ((entry (gethash key *bib-database*)))
-		      (cond
-			((not entry)
-			 (bib-warn "I didn't find a database entry for ~A"
-				   key)
-			 nil)
-			(t
-			 (let ((crossref (gethash "CROSSREF" entry)))
-			   (cond
-			     ((not crossref)
-			      entry)
-			     ((member crossref parent-keys :test 'string-equal)
-			      ;; circular cross reference
-			      (bib-warn "I detected a circular cross-reference to ~A"
-					crossref)
-			      nil)
-			     ((>= (gethash crossref crossref-hash 0)
-				  min-crossrefs)
-			      entry)
-			     (t
-			      (let ((crossref-entry
-				     (get-entry crossref (cons key  parent-keys))))
-				(if crossref-entry
-				    (merge-bib-entries entry crossref-entry)
-				    entry))))))))))
 	   (dolist (key cite-keys)
-	     (let ((entry (get-entry key '())))
+	     (let ((entry (get-merged-bib-entry key)))
 	       (when entry
 		 (vector-push-extend entry bib-entries))))
 	   (loop for key being each hash-key in crossref-hash
 		 and count being each hash-value in crossref-hash
 		 when (>= count min-crossrefs)
-		 do (let ((entry (get-entry key '())))
+		 do (let ((entry (get-merged-bib-entry key)))
 		      (when entry
-			(vector-push-extend entry bib-entries))))))))
+			(vector-push-extend entry bib-entries)))))))
     (coerce bib-entries 'list)))
 
 ;;; BibTeX names
@@ -872,8 +877,83 @@ the delimiter, which is left in the stream."
 
 ;;; Writing the BBL file
 
-(defvar *bbl-output* nil "The stream corresponding to the formatted bibliography (BBL) file.")
- 
+(defvar *bbl-output* nil
+  "The stream corresponding to the formatted bibliography (BBL) file.")
+
+(defvar *bbl-min-print-line* 3
+  "Minimum line length in the formatted bibliography (BBL) file.")
+
+(defvar *bbl-max-print-line* 79
+  "Maximum .bbl line length.  BBL-PRINT breaks lines so that no more
+than this many characters apear on each output line.  If nil,
+BBL-PRINT will not break lines.")
+
+(defvar *bbl-line-buffer* nil)
+
+(defun bbl-print (string)
+  "Add STRING to the BBL output buffer.  If there are enough
+characters present in the output buffer, it writes one or more lines
+out to the *BBL-OUTPUT* stream.  It may break a line at any whitespace
+character it likes, but if it does, it will add two spaces to the next
+output line.  If there's no whitespace character to break the line at,
+we break it just before *BBL-MAX-PRINT-LINE*, append a comment
+character (%), and don't indent the next line."
+  (loop for char across string do
+ 	(vector-push-extend char *bbl-line-buffer*))
+  (when *bbl-max-print-line*
+    (loop while (> (length *bbl-line-buffer*) *bbl-max-print-line*) do
+	  ;; Break that line
+	  (let ((white-space-index
+		 (position-if #'whitespace-p *bbl-line-buffer*
+			      :start *bbl-min-print-line*
+			      :end (+ *bbl-max-print-line* 1)
+			      :from-end t)))
+	    (cond
+	      (white-space-index	; have a whitespace character
+	       (let ((non-space-index
+		      (position-if (complement #'whitespace-p) *bbl-line-buffer*
+				   :end white-space-index
+				   :from-end t)))
+		 (when non-space-index ; ignore a line of just whitespace
+		   (princ (subseq *bbl-line-buffer* 0 (+ non-space-index 1))
+			  *bbl-output*)
+		   (terpri *bbl-output*)
+		   ;; shift the rest back
+		   (replace *bbl-line-buffer* *bbl-line-buffer*
+			    :start1 2 :start2 (+ white-space-index 1))
+		   ;; start the next line with two spaces
+		   (replace *bbl-line-buffer* "  " :start1 0)
+		   (decf (fill-pointer *bbl-line-buffer*)
+			 (- (+ white-space-index 1) 2)))))
+	      (t ; there's no whitespace character to break the line at
+	       (princ (subseq *bbl-line-buffer* 0 (- *bbl-max-print-line* 1))
+		      *bbl-output*)
+	       (princ "%" *bbl-output*)
+	       (terpri *bbl-output*)
+	       (replace *bbl-line-buffer* *bbl-line-buffer*
+			:start1 0 :start2 (- *bbl-max-print-line* 1))
+	       (decf (fill-pointer *bbl-line-buffer*)
+		     (- *bbl-max-print-line* 1))))))))
+
+(defun bbl-terpri ()
+  (princ *bbl-line-buffer* *bbl-output*)
+  (terpri *bbl-output*)
+  (setf (fill-pointer *bbl-line-buffer*) 0)
+  nil)
+
+(defun bbl-flush ()
+  (unless (zerop (length *bbl-line-buffer*))
+    (bbl-terpri)))
+
+(defmacro with-bbl-output ((stream) &body body)
+  `(let ((*bbl-output* ,stream)
+	 (*bbl-line-buffer* (make-array 0
+					:element-type 'character
+					:adjustable t
+					:fill-pointer 0)))
+    (multiple-value-prog1 (progn ,@body)
+      (bbl-flush))))
+
 ;;;
 
 (defvar *min-crossrefs* 2 "When a crossref'd entry is referenced at
@@ -883,12 +963,12 @@ well.")
 (defun read-all-bib-files-and-compute-bib-entries ()
   (dolist (file *bib-files*)
     (let ((expanded-file (kpathsea:find-file (concatenate 'string file ".bib"))))
-      (unless expanded-file
-	(format *error-output* "I couldn't find database file `~A'" file))
-      (with-open-file (s expanded-file :if-does-not-exist nil)
-	(unless s
-	  (format *error-output* "I couldn't open database file `~A'" expanded-file))
-	(read-bib-database s))))
+      (if (not expanded-file)
+	  (format *error-output* "I couldn't find database file `~A.bib'" file)
+	  (with-open-file (s expanded-file :if-does-not-exist nil)
+	    (if (not s)
+		(format *error-output* "I couldn't open database file `~A.bib'" expanded-file)
+		(read-bib-database s))))))
   (cited-bib-entries (if *cite-all-entries* t *cite-keys*)
 		     :min-crossrefs *min-crossrefs*))
 
