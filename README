@@ -5,7 +5,9 @@ Compile and load all Lisp files.
 
 The function BIBTEX is like the bibtex program.  Pass the file name
 STEM; BIBTEX will read STEM.aux, interpret a BST file, and write
-STEM.bbl.
+STEM.bbl:
+
+	(bibtex "ibm-theory")
 
 The package BIBTEX-RUNTIME contains useful routines for reading AUX
 files, formatting names, etc.
@@ -16,11 +18,45 @@ function COMPILE-BST-FILE:
 	 (compile-bst-file (kpathsea:find-file "amsalpha.bst")
 		  "/tmp/compiled-bst.lisp")
 
-The resulting Lisp file is meant to be a readable Common Lisp version
-of the BST file, which can be run on the AUX file to produce a BBL
-file, without using the BST interpreter.
+The resulting Lisp file is a readable Common Lisp version of the BST
+file, which can be run on the AUX file to produce a BBL file, without
+using the BST interpreter:
 
-The generated code currently does not run, though.
+        (load "/tmp/compiled-bst.lisp" :if-source-newer :compile)
+	(cl-bibtex "ibm-theory" 'amsalpha)
+
+However, the compiler cannot compile the FORMAT.NAMES functions in the
+standard styles because they are written in an evil way.  You need to
+change the BST file along the following diff first, so the compiler
+can compile it.
+
+diff -u /usr/share/texmf/bibtex/bst/ams/amsalpha.bst /home/mkoeppe/p/cl-bibtex/amsalpha-xx.bst
+--- /usr/share/texmf/bibtex/bst/ams/amsalpha.bst	Mon Mar 27 20:49:36 2000
++++ /home/mkoeppe/p/cl-bibtex/amsalpha-xx.bst	Wed Feb 13 23:44:19 2002
+@@ -337,11 +337,14 @@
+ %
+ % (i.e., first name first, no abbreviating to initials).
+ 
++%%%% I HAVE MODIFIED THIS FUNCTION SO THAT IT'S EASIER FOR THE COMPILER
++
+ FUNCTION {format.names}
+ { 's :=
+   #1 'nameptr :=
+   s num.names$ 'numnames :=
+   numnames 'namesleft :=
++  ""
+     { namesleft #0 > }
+     { s nameptr "{ff~}{vv~}{ll}{, jj}" format.name$ 't :=
+       nameptr #1 >
+@@ -358,7 +361,7 @@
+ 	    }
+ 	  if$
+ 	}
+-	't
++	{ t * }
+       if$
+       nameptr #1 + 'nameptr :=
+       namesleft #1 - 'namesleft :=
 
 
  -- Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>

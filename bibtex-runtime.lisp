@@ -7,7 +7,9 @@
   (:export "*BIB-MACROS*" "*BIB-DATABASE*" "*BIB-ENTRIES*"
 	   "*BIB-ENTRY*" "*BIB-PREAMBLE*" "*BIB-STYLE*"
 	   "*BIB-FILES*" "*CITE-ALL-ENTRIES*" "*CITE-KEYS*"
+	   "*BIB-ENTRY-TYPE-FUNCTIONS*"
 	   "READ-AUX-FILE" "READ-BIB-DATABASE" "CITED-BIB-ENTRIES"
+	   "READ-ALL-BIB-FILES-AND-COMPUTE-BIB-ENTRIES"
 	   "BIBTEX-NAME" "MAKE-BIBTEX-NAME" "BIBTEX-NAME-FIRST"
 	   "BIBTEX-NAME-VON" "BIBTEX-NAME-LAST" "BIBTEX-NAME-JR"
 	   "*BIBTEX-SPLIT-INITIALS*" "PARSE-BIBTEX-NAME" "PARSE-BIBTEX-NAME-LIST"
@@ -21,7 +23,7 @@
 	   "BIBTEX-STRING-PREFIX"
 	   "BIB-WARN" "BIB-ERRROR" "BIB-FATAL"
 	   #:*err-count* #:*history*
-	   #:+spotless-history+ #:+warning-message+ #:+error-message #:+fatal-message 
+	   #:+spotless-history+ #:+warning-message+ #:+error-message+ #:+fatal-message+
 	   #:*bbl-output*))
 
 (in-package bibtex-runtime)
@@ -83,9 +85,11 @@ everything up to the beginning of the next entry."
 (defvar *bib-stream* nil)
 (defvar *bib-macros* nil "A hashtable associating macro names with their definitions")
 (defvar *bib-database* nil "A hashtable associating BibTeX keys with entries")
-(defvar *bib-entries* nil "A sequence containing all requested BibTeX entries")
+(defvar *bib-entries* nil "A list containing all requested BibTeX entries")
 (defvar *bib-preamble* "" "A string accumulating all BibTeX @PREAMBLEs")
 (defvar *bib-entry* nil)
+(defvar *bib-entry-type-functions* nil
+  "An alist mapping BibTeX entry types to formatter functions")
 
 (defun read-bib-identifier ()
   "Read an identifier from *BIB-STREAM*, returning it as a string, or
@@ -306,7 +310,20 @@ well."
 ;;                  (when crossref
 ;;                    (let ((cross-entry (
 		      ))
-    bib-entries))
+    (coerce bib-entries 'list)))
+
+(defun read-all-bib-files-and-compute-bib-entries ()
+  (dolist (file *bib-files*)
+    (let ((expanded-file (kpathsea:find-file (concatenate 'string file ".bib"))))
+      (unless expanded-file
+	(format *error-output* "I couldn't find database file `~A'" file))
+      (with-open-file (s expanded-file :if-does-not-exist nil)
+	(unless s
+	  (format *error-output* "I couldn't open database file `~A'" expanded-file))
+	(read-bib-database s))))
+  (setq *bib-entries*
+	(cited-bib-entries (if *cite-all-entries* t *cite-keys*)
+			   :min-crossrefs 2)))
 
 ;;; BibTeX names
 
@@ -729,7 +746,7 @@ found in *AUX-FILE-COMMANDS*, call the associated function."
 
 (defun read-aux-file (name)
   "Read an AUX file, modifying *CITE-KEYS*, *CITE-ALL-ENTRIES*,
-*BIB-ENTRIES*, *BIB-FILES*, and *BIB-STYLE*."
+*BIB-FILES*, and *BIB-STYLE*."
   (let ((*citation-seen-p* nil)
 	(*bibdata-seen-p* nil))
     (read-aux-file-recursively name)
