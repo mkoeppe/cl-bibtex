@@ -235,7 +235,7 @@ non-nil, remove any leading or trailing whitespace."
       (bib-error "Expected `,' character"))
     (read-char *bib-stream*)
     (let ((entry (make-hash-table :size 16 :test 'equalp)))
-      (setf (gethash "entry-type" entry) entry-type)
+      (setf (gethash "entry-type" entry) (string-downcase entry-type))
       (setf (gethash "key" entry) key) 
       (loop (multiple-value-bind (name value)
 		(read-bib-field t)

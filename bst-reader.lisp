@@ -158,7 +158,8 @@
     (check-for-already-defined-function bst-name)
     (let ((lisp-name (bst-name-to-lisp-name bst-name)))
       (register-bst-global-var bst-name lisp-name 'int-global-var '(integer) 0 *bst-functions*)
-      (when *bst-compiling*
+      (when (and *bst-compiling*
+		 (not (member bst-name *lexicals* :test 'string-equal)))
 	(lisp-write `(defvar ,lisp-name 0))))))
 
 (define-bst-command "ITERATE" (function-list)
@@ -246,7 +247,8 @@
     (check-for-already-defined-function bst-name)
     (let ((lisp-name (bst-name-to-lisp-name bst-name)))
       (register-bst-global-var bst-name lisp-name 'str-global-var '(string) "" *bst-functions*)
-      (when *bst-compiling*
+      (when (and *bst-compiling*
+		 (not (member bst-name *lexicals* :test 'string-equal)))
 	(lisp-write `(defvar ,lisp-name ""))))))
 
 

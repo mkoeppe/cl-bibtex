@@ -183,8 +183,8 @@
   :side-effects-p t)
 
 (define-bst-primitive "type$" () ((string))
-  :interpreted (string-downcase (gethash "ENTRY-TYPE" *bib-entry* ""))
-  :compiled `(string-downcase (gethash "ENTRY-TYPE" *bib-entry* "")))
+  :interpreted (gethash "ENTRY-TYPE" *bib-entry* "")
+  :compiled `(gethash "ENTRY-TYPE" *bib-entry* ""))
 
 (define-bst-primitive "warning$" ((warning (string))) ()
   :interpreted (bib-warn warning)
