@@ -16,9 +16,18 @@ records the definition order in the BST file.")
   "A list collecting the forms corresponding to EXECUTE, ITERATE,
 READ, REVERSE, and SORT commands in reverse order.")
 
+(defvar *bst-function-call-sequence* '()
+  "A list of BST-FUNCTION structures.  It records the call order in
+the BST file in reverse order.")
+
 (defvar *bib-entries-symbol* nil
   "The name of the lexical variable in *main-lisp-body* that stores
 the bib entries.")
+
+(defvar *relaxed-compilation* t
+  "If non-nil, try to compile the BST program even if it is slightly
+broken.  In an IF$ with bad stack use, fill up one of the branches and
+signal a runtime error from there.")
 
 ;; The type system.  NIL means no value fits, T means all values fit.
 ;; A list of symbols means values of all listed types fit.
@@ -101,8 +110,10 @@ applied to the parallel elements in LISTS."
 
 ;;(map2 #'round '(5 6 7) '(2 2 2))
 
-(define-condition bst-compiler-error ()
+(define-condition bst-compiler-warning ()
   ((message :initarg :message :reader bst-compiler-error-message)))
+
+(define-condition bst-compiler-error (bst-compiler-warning) ())
 
 (defvar *currently-compiled-function* nil
   "Only used for reporting errors.")
@@ -121,6 +132,14 @@ applied to the parallel elements in LISTS."
        (nconc (nreverse front) (cons '====> body)))
     (setq front (cons (car body) front))))
     
+
+(defun bst-compile-warning (format-string &rest args)
+  (signal (make-condition 'bst-compiler-warning
+			  :message
+			  (concatenate 'string
+				       (format nil " In BST body ~S:~%  "
+					       (currently-compiled-body-with-markup))
+				       (apply 'format nil format-string args)))))
 
 (defun bst-compile-error (format-string &rest args)
   (error (make-condition 'bst-compiler-error
@@ -220,18 +239,18 @@ bound variables onto *FORM-STACK*."
 		 (assigned-variables ()))
   "Pop a Lisp form delivering a single value of given TYPE from
 *FORM-STACK*.  If the stack is empty, borrow a variable instead if
-:WHEN-EMPTY is :BORROW, or return nil if :WHEN-EMPTY is nil.  If
+:WHEN-EMPTY is :BORROW, or return nil,nil,nil,t if :WHEN-EMPTY is nil.  If
 :NEED-VARIABLE is nil, POP-FORM may return a side-effecting
 single-value form \(which should only be called once, in order).  If
 :NEED-VARIABLE is :IF-SIDE-EFFECTS, POP-FORM will introduce a variable
 for side-effecting forms.  Otherwise, POP-FORM will introduce a
 variable for all non-atom forms.  A variable will also be introduced
 if the form uses one of the variables in the list :ASSIGNED-VARIABLES.
-Return three values: the Lisp form,
-the actual type of the delivered value, and SIDE-EFFECTS."
+Return four values: the Lisp form,
+the actual type of the delivered value, SIDE-EFFECTS, and EMPTY-P."
   (loop (when (null *form-stack*)
 	  (ecase when-empty
-	    ((nil) (return-from pop-form nil))
+	    ((nil) (return-from pop-form (values nil nil nil t)))
 	    (:borrow 
 	     ;; Borrow a variable
 	     (let ((arg-symbol (bst-gentemp "ARG")))
@@ -276,8 +295,7 @@ the actual type of the delivered value, and SIDE-EFFECTS."
 	       (return-the-form))
 	      ((and (eql need-variable :if-side-effects)
 		    (not (any-side-effects-p (mvform-side-effects top-mvform)))
-		    ;;;(= (length (mvform-types top-mvform)) 1)
-		    )
+		    (= (length (mvform-types top-mvform)) 1))
 	       (return-the-form))
 	      ((and (not need-variable)
 		    (= (length (mvform-types top-mvform)) 1))
@@ -290,12 +308,12 @@ the actual type of the delivered value, and SIDE-EFFECTS."
 
 (defun pop-single-value-form (&rest args)
   "Like pop-form, but package the return values in a MVFORM object."
-  (multiple-value-bind (form type side-effects)
+  (multiple-value-bind (form type side-effects empty-p)
       (apply 'pop-form args)
-    (if form
+    (if empty-p
+	nil
 	(make-mvform :form form :types (list type)
-		     :side-effects side-effects)
-	nil)))
+		     :side-effects side-effects))))
 
 (defun push-form (mvform)
   "Push MVFORM onto *FORM-STACK*."
@@ -503,6 +521,9 @@ special forms by directly manipulating the current compiler data.")
 				   :assigned-variables (list assigned-thing)
 				   :unconditionally-assigned-variables (list assigned-thing)))))
 	  (cond
+	    ((bst-function-constant-p fun)
+	     ;; do nothing
+	     (pop-single-value-form t :need-variable :if-side-effects))
 	    ((setq assoc (assoc name *lexical-variables* :test 'string-equal))
 	     (let ((var-name (variable-name (cdr assoc)))
 		   (value-mvform (pop-single-value-form t :need-variable nil)))
@@ -527,6 +548,8 @@ special forms by directly manipulating the current compiler data.")
 	     (let* ((setter-form-maker (bst-function-setter-form-maker fun))
 		    (value-mvform (pop-single-value-form t :need-variable nil))
 		    (setter-form (funcall setter-form-maker (mvform-form value-mvform))))
+	       (incf (bst-function-num-assignments fun))
+	       (setf (bst-function-assigned-value-form fun) (mvform-form value-mvform))
 	       (push-mvform
 		:form setter-form :types ()
 		:side-effects (compute-side-effects name value-mvform)))))))))
@@ -535,6 +558,8 @@ special forms by directly manipulating the current compiler data.")
   (let ((function (gethash (string name) *bst-functions*)))
     (unless function
       (bst-compile-error "~A is an unknown function" name))
+    (when (eql (bst-function-type function) 'wiz-defined)
+      (bst-compile-error "~A is a function that could not be compiled" name))
     function))
 
 (defun bst-compile-literal (literal stack &key (borrowing-allowed t))
@@ -592,25 +617,29 @@ FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P, and FREE-VARIABLES."
 		(else-balance (- (length else-res-types) (length else-arg-types)))
 		(then-stack ())
 		(else-stack ()))
+	    (flet ((build-stacks (&key then-exception else-exception)
+		     (do ((then-arg-types (reverse then-arg-types) (cdr then-arg-types))
+			  (else-arg-types (reverse else-arg-types) (cdr else-arg-types)))
+			 ((and (null then-arg-types) (null else-arg-types))
+			  (setq arg-types (nreverse arg-types)
+				then-stack (nreverse then-stack)
+				else-stack (nreverse else-stack)))
+		       (let* ((type (type-intersection
+				     (if then-arg-types (car then-arg-types) t)
+				     (if else-arg-types (car else-arg-types) t)))
+			      (form (pop-single-value-form type
+							   :need-variable :if-side-effects)))
+			 (push type arg-types)
+			 (unless (and then-exception (null then-arg-types))
+			   (push form then-stack))
+			 (unless (and else-exception (null else-arg-types))
+			   (push form else-stack))))))
 	    (cond ((= then-balance else-balance)
 		   ;; This is the regular case: We have the same
 		   ;; net number of values pushed to the stack.
 		   ;; We compute the arg types and fill up the
 		   ;; shorter arg list.
-		   (do ((then-arg-types (reverse then-arg-types) (cdr then-arg-types))
-			(else-arg-types (reverse else-arg-types) (cdr else-arg-types)))
-		       ((and (null then-arg-types) (null else-arg-types))
-			(setq arg-types (nreverse arg-types)
-			      then-stack (nreverse then-stack)
-			      else-stack (nreverse else-stack)))
-		     (let* ((type (type-intersection
-				   (if then-arg-types (car then-arg-types) t)
-				   (if else-arg-types (car else-arg-types) t)))
-			    (form (pop-single-value-form type
-							 :need-variable :if-side-effects)))
-		       (push type arg-types)
-		       (push form then-stack)
-		       (push form else-stack))))
+		   (build-stacks))
 		  ((and *compiling-while-body*
 			(> else-balance 0)
 			(= (length then-res-types) (length else-res-types)))
@@ -621,33 +650,42 @@ FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P, and FREE-VARIABLES."
 		   ;; branch is STRING->STRING and whose ELSE branch
 		   ;; is NIL->STRING.
 		   ;; FIXME: This could be easily generalized on a better day.
-		   (format *error-output*
-			   "While compiling wizard-defined function `~A':~% Warning: Employing the producer/modifier while loop trick.~%"
-			   *currently-compiled-function*)			   
-		   (do ((then-arg-types (reverse then-arg-types) (cdr then-arg-types))
-			(else-arg-types (reverse else-arg-types) (cdr else-arg-types)))
-		       ((and (null then-arg-types) (null else-arg-types))
-			(setq arg-types (nreverse arg-types)
-			      then-stack (nreverse then-stack)
-			      else-stack (nreverse else-stack)))
-		     (let* ((type (type-intersection
-				   (if then-arg-types (car then-arg-types) t)
-				   (if else-arg-types (car else-arg-types) t)))
-			    (form (pop-single-value-form type
-							 :need-variable :if-side-effects)))
-		       (push type arg-types)
-		       (push form then-stack)
-		       (unless (null else-arg-types)
-			 (push form else-stack))))
+		   (bst-compile-warning " Warning: Employing the producer/modifier while loop trick.~%")
+		   (build-stacks :else-exception t)
 		   ;;(format *error-output* "~&ARG-TYPES: ~S~%THEN-STACK: ~S~%ELSE-STACK: ~S~%"
 		   ;; arg-types then-stack else-stack))
 		   (setq *compiling-while-body* else-balance))
+		  (*relaxed-compilation*
+		   (bst-compile-warning
+		    "Warning: THEN and ELSE functions deliver different net number of values.~%~
+                     ~&  THEN function ~S~%  is ~:A -> ~:A~%~
+                     ~&  and ELSE function ~S~%  is ~:A -> ~:A.~%~
+                     ~&  Because *RELAXED-COMPILATION* is true, we try to fix this~%~
+                     ~&  by filling up the ~A function.  (This can cause errors later.)~%"
+					then-literal
+					then-arg-types then-res-types
+					else-literal
+					else-arg-types else-res-types
+					(if (< then-balance else-balance)
+					    "THEN" "ELSE"))
+		   (build-stacks)
+		   (let ((dummy-items
+			  (loop repeat (abs (- else-balance then-balance))
+				collect (make-mvform :form `(error "This is the result of a slightly broken BibTeX style file.")
+						     :types (list t)
+						     ;;:side-effects (make-instance 'side-effects :side-effects-p t)
+						     ))))
+		     (if (< then-balance else-balance)
+			 (setf then-stack
+			       (nconc then-stack dummy-items))
+			 (setf else-stack
+			       (nconc else-stack dummy-items)))))
 		  (t
-		   (bst-compile-error "THEN function ~S ~%== ~S and ELSE function ~S ~%== ~S deliver ~
-different net number of values: ~%~A -> ~A vs. ~A -> ~A"
+		   (bst-compile-error "THEN function ~S ~%  == ~S~%  and ELSE function ~S ~%  == ~S~%  deliver ~
+different net number of values: ~%  ~:A -> ~:A vs. ~:A -> ~:A"
 				      then-literal then-form else-literal else-form
 				      then-arg-types then-res-types
-				      else-arg-types else-res-types)))
+				      else-arg-types else-res-types))))
 	    (multiple-value-bind (else-form else-arg-types
 					    else-res-types else-side-effects)
 		(bst-compile-literal else-literal else-stack :borrowing-allowed nil)
@@ -737,11 +775,11 @@ BODY, LOOP-VARS, LOOP-VAR-TYPES, INIT-TYPES and SIDE-EFFECTS."
 				      pred-res-types pred-side-effects)
 	  (bst-compile-literal pred-literal ())
 	(unless (null pred-arg-types)
-	  (bst-compile-error "PREDICATE function ~S takes stack values: ~S"
+	  (bst-compile-error "PREDICATE function ~S~%  takes stack values: ~S"
 			     pred-literal pred-arg-types))
 	(unless (and (= (length pred-res-types) 1)
 		     (type= (car pred-res-types) '(boolean)))
-	  (bst-compile-error "PREDICATE function ~S does not deliver exactly one boolean stack value: ~S"
+	  (bst-compile-error "PREDICATE function ~S~%  does not deliver exactly one boolean stack value: ~S"
 			     pred-literal pred-res-types))
 	(multiple-value-bind (body loop-vars loop-var-types init-types
 				   body-side-effects)
@@ -856,44 +894,48 @@ STREAM as Lisp comments."
   (let ((side-effects (bst-function-side-effects bst-function)))
     #-clisp
     (format stream
-	    "~%~<;; ~@;~:S --> ~:S ~:[~;with side-effects ~]~:[~;~%with assignment to~:*~{ ~S~}~]~:[~;~%with possible assignment to~:*~{ ~S~}~]~:[~;~%with reference to~:*~{ ~S~}~]~:[~;~%with reference-before-assignment to~:*~{ ~S~}~]~:>"
+	    "~%~<;; ~@;~:S --> ~:S ~:[~;with side-effects ~]~:[~;~%with assignment to~:*~{ ~S~}~]~:[~;~%with possible assignment to~:*~{ ~S~}~]~:[~;~%with reference-before-assignment to~:*~{ ~S~}~]~:[~;~%with reference to~:*~{ ~S~}~]~:>"
 	    (list (bst-function-argument-types bst-function)
 		  (bst-function-result-types bst-function)
 		  (side-effects-side-effects-p side-effects)
 		  (side-effects-unconditionally-assigned-variables side-effects)
 		  (set-difference (side-effects-assigned-variables side-effects)
 				  (side-effects-unconditionally-assigned-variables side-effects)
-				  :test 'equalp)			
-		  (side-effects-used-variables side-effects)
-		  (side-effects-variables-used-before-assigned side-effects)))))  
+				  :test #'equalp)		
+		  (side-effects-variables-used-before-assigned side-effects)
+		  (set-difference (side-effects-used-variables side-effects)
+				  (side-effects-variables-used-before-assigned side-effects)
+				  :test #'equalp)))))  
 
 (defun compile-bst-function (bst-function)
   (let* ((bst-name (bst-function-name bst-function))
 	 (*currently-compiled-function* bst-name)
 	 (lisp-name (bst-name-to-lisp-name bst-name :function)))
     (handler-case 
-	(multiple-value-bind (defun-form argument-types
-				 result-types side-effects)
-	    (bst-compile-defun lisp-name
-			       (bst-function-body bst-function))
-	  #-clisp  ; CLISP does not seem to handle ~< ... ~:> properly
-	  
-	  (setf (bst-function-lisp-name bst-function)
-		lisp-name
-		(bst-function-type bst-function)
-		'compiled-wiz-defined
-		(bst-function-argument-types bst-function)
-		argument-types
-		(bst-function-result-types bst-function)
-		result-types
-		(bst-function-side-effects bst-function)
-		side-effects
-		(bst-function-defun-form bst-function)
-		defun-form))
+	(handler-bind ((bst-compiler-warning
+			(lambda (condition)
+			 (format *error-output*
+				 "While compiling wizard-defined function `~A':~%~A~%"
+				 bst-name (bst-compiler-error-message condition)))))
+	  (multiple-value-bind (defun-form argument-types
+				   result-types side-effects)
+	      (bst-compile-defun lisp-name
+				 (bst-function-body bst-function))
+	    (setf (bst-function-lisp-name bst-function)
+		  lisp-name
+		  (bst-function-type bst-function)
+		  'compiled-wiz-defined
+		  (bst-function-argument-types bst-function)
+		  argument-types
+		  (bst-function-result-types bst-function)
+		  result-types
+		  (bst-function-side-effects bst-function)
+		  side-effects
+		  (bst-function-defun-form bst-function)
+		  defun-form)))
       (bst-compiler-error (condition)
-	(format *error-output*
-		"While compiling wizard-defined function `~S':~%~A~%"
-		bst-name (bst-compiler-error-message condition))))))
+	(declare (ignore condition))
+	nil))))
 
 (defun compile-bst-fun (definition &key int-vars str-vars)
   "A debugging aid."
@@ -912,8 +954,9 @@ STREAM as Lisp comments."
   ;; flow through variable X.  Hence, we can make the variable lexical
   ;; in every function where it is used.
   (loop for bst-function being each hash-value in *bst-functions*
-	when (member (bst-function-type bst-function)
-		     '(str-global-var int-global-var))
+	when (and (member (bst-function-type bst-function)
+			  '(str-global-var int-global-var))
+		  (not (bst-function-constant-p bst-function)))
 	do (setf (bst-function-lexical-p bst-function) t))
   (loop for bst-function being each hash-value in *bst-functions*
 	when (eq (bst-function-type bst-function) 'compiled-wiz-defined)
@@ -925,8 +968,56 @@ STREAM as Lisp comments."
 	when (and (member (bst-function-type bst-function)
 			  '(str-global-var int-global-var))
 		  (bst-function-lexical-p bst-function))
-	collect (bst-function-name bst-function)))
+	do (unintern (bst-function-lisp-name bst-function) *bst-package*)
+	and collect (bst-function-name bst-function)))
 
+(defun constant-bst-variable-p (variable)
+  (loop with assignment = nil and reference = nil
+	for callee in (reverse *bst-function-call-sequence*) do
+	(let ((side-effects (bst-function-side-effects variable)))
+	  ;; We test for reference before we test for assignment.
+	  ;; This way, we rule out the case of a function that assigns
+	  ;; a variable and refers to it; here we cannot decide
+	  ;; whether the variable is constant or not.
+	  (when (member (bst-function-name variable)
+			(side-effects-used-variables side-effects)
+			:test #'string-equal)
+	    (setq reference t))
+	  ;; Test for assignment
+	  (when (member (bst-function-name variable)
+			(side-effects-assigned-variables side-effects)
+			:test #'string-equal)
+	    (when assignment
+	      ;; another assignment -> not constant
+	      (return-from constant-bst-variable-p nil))
+	    (when reference
+	      ;; reference to variable before assignment
+	      ;; means reference to default value -> not constant
+	      (return-from constant-bst-variable-p nil))
+	    (setq assignment t)))
+	finally (return-from constant-bst-variable-p t)))    
+
+(defun make-some-variables-constant ()
+  (loop for bst-function being each hash-value in *bst-functions*
+	when (and (member (bst-function-type bst-function)
+			  '(str-global-var int-global-var))
+		  (not (bst-function-constant-p bst-function))
+		  (< (bst-function-num-assignments bst-function) 2)
+		  (typep (bst-function-assigned-value-form bst-function)
+			 '(or integer string))
+		  (constant-bst-variable-p bst-function))
+	do (let ((new-lisp-name
+		  (bst-name-to-lisp-name (bst-function-name bst-function)
+					 :constant)))
+	     (unintern (bst-function-lisp-name bst-function) *bst-package*)
+	     (setf (bst-function-constant-p bst-function) t
+		   (bst-function-lexical-p bst-function) nil
+		   (bst-function-lisp-name bst-function) new-lisp-name
+		   (bst-function-lisp-form-maker bst-function)
+		   (lambda () new-lisp-name)
+		   (bst-function-setter-form-maker bst-function)
+		   (lambda () `(values))))
+	and collect (bst-function-name bst-function)))  
 
 #|
 
