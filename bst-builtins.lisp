@@ -38,11 +38,14 @@
 		       (get-bst-function-of-type 'default.type '(wiz-defined compiled-wiz-defined)))))
     (when function
       (bst-execute function)))
-  :compiled `(let ((type/fun (assoc (gethash "ENTRY-TYPE" *bib-entry*)
-				    *bib-entry-type-functions* :test 'string-equal)))
-	      (if type/fun
-		  (funcall (cdr type/fun))
-		  (,(bst-name-to-lisp-name "default.type")))))
+  :compiled
+  (let ((type/fun-sym (intern "TYPE/FUN")))
+    `(let ((,type/fun-sym
+	    (assoc (gethash "ENTRY-TYPE" *bib-entry*)
+		   *bib-entry-type-functions* :test 'string-equal)))
+      (if ,type/fun-sym
+	  (funcall (cdr ,type/fun-sym))
+	  (,(bst-name-to-lisp-name "default.type" :function))))))
 
 (define-bst-primitive "change.case$" ((string (string)) (spec (string))) ((string))
   :interpreted
@@ -174,7 +177,11 @@
 (define-bst-primitive "swap$" ((a t) (b t)) (t t)
   :interpreted (values b a))
 
-(register-bst-primitive "text.length$" '((string)) '((integer)) 'length) ; FIXME: count text chars only
+(register-bst-primitive "text.length$" '((string)) '((integer)) 'length)
+;; FIXME: TEXT.LENGTH$ counts all characters except for braces; if a
+;; backslash occurs at bracelevel = 1, consume all characters until
+;; bracelevel = 0, and count everything as one character.
+
 (register-bst-primitive "text.prefix$" '((string) (integer)) '((string)) 'bibtex-string-prefix)
 
 (define-bst-primitive "top$" ((object t)) ()
