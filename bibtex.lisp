@@ -108,24 +108,28 @@
 (register-bst-primitive "+" '((integer) (integer)) '((integer)) '+)
 (register-bst-primitive "-" '((integer) (integer)) '((integer)) '-)
 
+(defun build-associative-form (operators form1 form2)
+  "Build the form `(,@OPERATORS FORM1 FORM2) but if FORM1 and FORM2
+are of this form, use the associativity of the operation to build
+`(,@OPERATORS FORMS...) instead."
+  (labels ((operation-p (form)
+	     (and (consp form)
+		  (let ((index (mismatch operators form :test 'equal)))
+		    (or (not index)
+			(= index (length operators))))))
+	   (args (form)
+	     (subseq form (length operators)))
+	   (arg-forms (form)
+	     (if (operation-p form)
+		 (args form)
+		 (list form))))
+    `(,@operators ,@(arg-forms form1) ,@(arg-forms form2)))) 
+
+(mismatch '(concatenate 'string) '(concatenate 'string 1 2) :test 'equal)
+	  
 (define-bst-primitive "*" ((a (string)) (b (string))) ((string))
   :interpreted (concatenate 'string a b)
-  :compiled (labels ((concat-p (form)
-		       (and (consp form)
-			    (eql (car form) 'concatenate)
-			    (consp (cdr form))
-			    (equal (cadr form) '(quote string))))
-		     (concat-args (form)
-		       (cddr form))
-		     (string-forms (form)
-		       (if (concat-p form)
-			   (concat-args form)
-			   (list form))))
-	      ;; simplify nested * forms
-	      (let ((string-forms-1 (string-forms a))
-		    (string-forms-2 (string-forms b)))
-		`(concatenate 'string
-		  ,@string-forms-1 ,@string-forms-2))))
+  :compiled (build-associative-form `(concatenate 'string) a b))
 
 (define-bst-primitive ":=" ((value t) (variable (symbol))) ()
   :interpreted
@@ -191,10 +195,14 @@
 		 (t
 		  (bib-warn "String ~S is not a one-character string")
 		  0))
-  :compiled `(let ((str ,s))
-	      (if (= (length str) 1)
-		  (char-code (char str 0)))
-		  0))
+  :compiled (if (stringp s)
+		(if (= (length s) 1)
+		    `(char-code ,(char s 0))
+		    0)
+		`(let ((str ,s))
+		  (if (= (length str) 1)
+		      (char-code (char str 0))
+		      0))))
 
 (define-bst-primitive "cite$" () ((string))
   :interpreted (gethash "KEY" *bib-entry* "")
@@ -263,8 +271,16 @@
   :interpreted nil
   :compiled `(values))
 
-(register-bst-primitive "substring$" '((string) (integer) (integer))
-			'((string)) 'bibtex-substring)
+(define-bst-primitive "substring$"
+    ((s (string)) (start (integer)) (count (integer)))
+    ((string))
+  :interpreted (bibtex-substring s start count)
+  :compiled (if (eql count 'most-positive-fixnum)
+		;; We can't use subseq because it throws an error
+		;; if start >= length.  At least get rid of the
+		;; `global.max$' equivalent.
+		`(bibtex-substring ,s ,start)
+		`(bibtex-substring ,s ,start ,count)))  
 
 (define-bst-primitive "swap$" ((a t) (b t)) (t t)
   :interpreted (values b a))
@@ -302,12 +318,12 @@
 
 (define-bst-primitive "and" ((a (boolean)) (b (boolean))) ((boolean))
   :interpreted (and a b)
-  :compiled `(and ,a ,b)
+  :compiled (build-associative-form `(and) a b)
   :ignore-redefinition-p t)
 
 (define-bst-primitive "or" ((a (boolean)) (b (boolean))) ((boolean))
   :interpreted (or a b)
-  :compiled `(or ,a ,b)
+  :compiled (build-associative-form `(or) a b)
   :ignore-redefinition-p t)
 
 (define-bst-primitive "not" ((a (boolean))) ((boolean))
@@ -448,7 +464,7 @@ program.")
 (defun bst-name-to-lisp-name (bst-name)
   (setq bst-name (string-upcase (string bst-name)))
   (if (string-equal bst-name "T")
-      (gentemp "T")
+      (gentemp "TEMP")
       (intern bst-name)))
 
 (defun check-for-already-defined-function (name)

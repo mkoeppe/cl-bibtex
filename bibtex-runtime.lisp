@@ -840,7 +840,7 @@ mark."
   (or (null string)
       (every #'whitespace-p string)))
 
-(defun bibtex-substring (s start count)
+(defun bibtex-substring (s start &optional (count most-positive-fixnum))
   "A substring function compatible with BibTeX's substring$."
   (cond
     ((or (> start (length s))
