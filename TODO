@@ -7,6 +7,7 @@ To do:
 * The crossref feature
 * Add a test suite, consisting of database files and BibTeX style files,
   for testing the correctness of cl-bibtex
+* A writer for .bib entries
 
 In the compiler:
 
