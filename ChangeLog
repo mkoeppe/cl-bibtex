@@ -1,3 +1,11 @@
+2002-03-18  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
+
+	* kpathsea.lisp (find-file): Take pathname designators, not strings.
+	* bibtex.lisp (bibtex, cl-bibtex): Likewise.
+	  Suggested by Paul Foley.
+
+	* packages.lisp, bibtex-runtime.lisp (write-bib-entry): New function.
+
 2002-03-14  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
 
 	Version 0.1
