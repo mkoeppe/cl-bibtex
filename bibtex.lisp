@@ -4,7 +4,7 @@
 
 (in-package bibtex-compiler)
 
-(defconstant +version+ "0.3.1")
+(defconstant +version+ "0.4")
 
 ;;; The compiler front-end
 
@@ -153,16 +153,39 @@ KPSEARCH and loaded into the Lisp image.  (This might be seen as a
 security risk, because Lisp programs are much more powerful than BST
 scripts.)")
 
+(defvar *registered-bibtex-style* nil)
+
 (defun register-bibtex-style (name thunk)
   "Register a BibTeX style, implemented as THUNK (a function
 designator), under NAME."
-  (push (cons name thunk) *bibtex-styles*))
+  (setq *registered-bibtex-style* (cons name thunk))
+  (push *registered-bibtex-style* *bibtex-styles*))
 
 (defmacro define-bibtex-style (name &body body)
   (let ((function-name
 	 (gentemp (concatenate 'string "BIBTEX-STYLE-" (string name)))))
     `(progn (defun ,function-name () ,@body)
       (register-bibtex-style ',name ',function-name))))      
+
+(defun interpreted-bibtex-style (bst-file)
+  "Return a thunk that implements the BibTeX style of the BST-FILE
+by running the BST interpreter."
+  (lambda ()
+    (with-open-file (bst-stream bst-file :if-does-not-exist nil)
+      (unless bst-stream
+	(bib-fatal "I couldn't open style file `~A'" bst-file))
+      (let ((*literal-stack* nil))
+	(get-bst-commands-and-process bst-stream)))))
+
+(defun lisp-bibtex-style (lbst-file)
+  "Return a thunk that implements the Lisp BibTeX style of LBST-FILE."
+  (let ((*registered-bibtex-style* nil))
+    (unless (load lbst-file)
+      (error "Loading Lisp BibTeX style file `~A' failed."
+	     lbst-file))
+    (unless *registered-bibtex-style*
+      (error "Lisp BibTeX style `~A' failed to register itself." lbst-file))
+    (cdr *registered-bibtex-style*)))
 
 (defun find-bibtex-style (style)
   "Find the named BibTeX STYLE.
@@ -180,33 +203,19 @@ if no style of the requested name has been found."
 	    (setq it (kpathsea:find-file
 		      (make-pathname :type "LBST" :case :common
 				     :defaults style))))
-       (unless (load it)
-	 (error "Loading Lisp BibTeX style file `~A' failed."
-		it))
-       ;; The Lisp BibTeX style is supposed to register the style.
-       (let ((style/thunk (assoc style *bibtex-styles* :test #'string-equal)))
-	 (unless style/thunk
-	   (error "Lisp BibTeX style `~A' failed to register itself." style))
-	 (cdr style/thunk)))
+       (lisp-bibtex-style it))
       ((setq it (kpathsea:find-file
 		 (make-pathname :type "BST" :case :common
 				:defaults style)))
-       (lambda ()
-	 (with-open-file (bst-stream it :if-does-not-exist nil)
-	   (unless bst-stream
-	     (bib-fatal "I couldn't open style file `~A'" it))
-	   (let ((*literal-stack* nil))
-	     (get-bst-commands-and-process bst-stream)))))
+       (interpreted-bibtex-style it))
       (t (error "Could not find a BibTeX style named `~A'." style)))))
-       
-       
 
 (defun bibtex (file-stem &key style)
   "The BibTeX program.  Read citation commands, a list of
 bibliographic databases and the name of the bibliography style from
 TeX commands in the file `FILE-STEM.aux'.  Find the named bibliography
 style via `find-bibtex-style'; it can be overridden programmatically
-using the :STYLE argument (a string or a function).  Print the
+using the :STYLE argument (a string or a function designator).  Print the
 formatted bibliography to the file `FILE-STEM.bbl'."
   (let ((*bib-macros* (make-hash-table :test #'equalp))
 	(*bib-database* (make-hash-table :test #'equalp))
@@ -225,6 +234,7 @@ formatted bibliography to the file `FILE-STEM.bbl'."
 	   (cond
 	     ((not style) (find-bibtex-style *bib-style*))
 	     ((functionp style) style)
+	     ((symbolp style) (fdefinition style))
 	     ((stringp style) (find-bibtex-style style))
 	     (t (error "Bad :STYLE argument: ~S" style)))))
       (with-open-file (bbl-output (make-pathname :type "BBL" :case :common
