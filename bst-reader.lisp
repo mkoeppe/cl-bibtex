@@ -19,8 +19,7 @@
 			       (values 
 				(intern
 				 (string-upcase 
-				  (concatenate 'string ":" (symbol-name sym)))
-				 "BIBTEX-COMPILER")))))
+				  (concatenate 'string ":" (symbol-name sym))))))))
 			       
     ;; function lists
     (set-macro-character #\{
