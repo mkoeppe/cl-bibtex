@@ -19,7 +19,8 @@
 			       (values 
 				(intern
 				 (string-upcase 
-				  (concatenate 'string ":" (symbol-name sym))))))))
+				  (concatenate 'string ":" (symbol-name sym)))
+				 "BIBTEX-COMPILER")))))
 			       
     ;; function lists
     (set-macro-character #\{
@@ -78,6 +79,23 @@
     (make-bst-command :function (lambda ,args ,@body)
      :args ',args)))
 
+(defun copy-comment (from-stream to-stream)
+  (terpri to-stream)
+  (loop while (char= (peek-char t from-stream nil #\x) #\%)
+	do
+	(princ ";" to-stream)
+	(loop while (char= (peek-char nil from-stream nil #\x) #\%)
+	      do (read-char from-stream) (princ ";" to-stream))
+	(princ (read-line from-stream nil "") to-stream)
+	(terpri to-stream)))
+
+(defun store-comment ()
+  "Copy top-level comments; replace N leading % signs with N+1 semicola"
+  (let ((comment 
+	 (with-output-to-string (s)
+	   (copy-comment *bst-stream* s))))
+    (push comment *bst-definition-sequence*)))  
+
 (defun get-bst-commands-and-process (stream)
   (let* ((*bst-stream* stream)
 	 (*entry-seen-p* nil)
@@ -85,15 +103,7 @@
     (loop
      (when (and *bst-compiling*
 		(char= (peek-char t *bst-stream* nil #\x) #\%))
-       ;; Copy top-level comments; replace N leading % signs with N+1 semicola
-       (terpri *lisp-stream*)
-       (loop while (char= (peek-char t *bst-stream* nil #\x) #\%)
-	     do
-	     (princ ";" *lisp-stream*)
-	     (loop while (char= (peek-char nil *bst-stream* nil #\x) #\%)
-		   do (read-char *bst-stream*) (princ ";" *lisp-stream*))
-	     (princ (read-line *bst-stream* nil "") *lisp-stream*)
-	     (terpri *lisp-stream*)))
+       (store-comment))
      (let ((command (bst-read :eof-ok t)))
        (when (eql command '*EOF*)
 	 (return))
@@ -144,12 +154,13 @@
 	   function-list))
   (let* ((bst-name (car function-list)))
     (unless (check-for-already-defined-function bst-name)
-      (if *bst-compiling*
-	  (compile-bst-function bst-name function-definition *lisp-stream*)
-	(setf (gethash (string bst-name) *bst-functions*)
-	      (make-bst-function :name (string bst-name)
-				 :type 'wiz-defined
-				 :body function-definition))))))
+      (let ((bst-function (make-bst-function :name (string bst-name)
+					     :type 'wiz-defined
+					     :body function-definition)))
+	(setf (gethash (string bst-name) *bst-functions*) bst-function)
+	(when *bst-compiling*
+	  (compile-bst-function bst-function)
+	  (push bst-function *bst-definition-sequence*))))))
 
 (define-bst-command "INTEGERS" (name-list)
   (unless (listp name-list)
@@ -159,11 +170,13 @@
     (check-for-already-defined-function bst-name)
     (let* ((lexical (member bst-name *lexicals* :test 'string-equal))
 	   (lisp-name (bst-name-to-lisp-name bst-name
-					     (if lexical :lexical :variable))))
-      (register-bst-global-var bst-name lisp-name 'int-global-var '(integer) 0 *bst-functions*)
-      (when (and *bst-compiling* (not lexical))
-	(lisp-write `(defvar ,lisp-name 0))))))
-
+					     (if lexical :lexical :variable)))
+	   (bst-function
+	    (register-bst-global-var bst-name lisp-name 'int-global-var
+				     '(integer) 0 *bst-functions*)))
+      (when *bst-compiling*
+	(push bst-function *bst-definition-sequence*)))))
+    
 (define-bst-command "ITERATE" (function-list)
   (unless *read-seen-p*
     (error "Illegal, iterate command before read command"))
@@ -237,8 +250,8 @@
   (if *bst-compiling*
       (push `(setq ,*bib-entries-symbol*
 	      (stable-sort ,*bib-entries-symbol* 'string<=
-	       :key (lambda (,(intern "ENTRY"))
-		      (gethash "SORT.KEY$" ,(intern "ENTRY") ""))))
+	       :key (lambda (,(bst-intern "ENTRY"))
+		      (gethash "SORT.KEY$" ,(bst-intern "ENTRY") ""))))
 	    *main-lisp-body*)
       (setq *bib-entries*
 	    (stable-sort *bib-entries* 'string<=
@@ -252,9 +265,11 @@
     (check-for-already-defined-function bst-name)
     (let* ((lexical (member bst-name *lexicals* :test 'string-equal))
 	   (lisp-name (bst-name-to-lisp-name bst-name
-					     (if lexical :lexical :variable))))
-      (register-bst-global-var bst-name lisp-name 'str-global-var '(string) "" *bst-functions*)
-      (when (and *bst-compiling* (not lexical))
-	(lisp-write `(defvar ,lisp-name ""))))))
+					     (if lexical :lexical :variable)))
+	   (bst-function
+	    (register-bst-global-var bst-name lisp-name 'str-global-var
+				     '(string) "" *bst-functions*)))
+      (when *bst-compiling*
+	(push bst-function *bst-definition-sequence*)))))
 
 
