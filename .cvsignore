@@ -1,4 +1,5 @@
 *.fas
 *.x86f
 *.lib
+*.sparcf
 *.err
