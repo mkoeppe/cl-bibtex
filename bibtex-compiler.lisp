@@ -4,7 +4,15 @@
 
 ;; TODO:
 ;; * macros
-;; * maybe special form for = that chooses = or string=
+;; * most variables are in fact lexical variables (some, in fact, only
+;;   store arguments for later use).  Keep track whether a variable is
+;;   accessed before it is assigned in any function; if not, we can make
+;;   it lexical in *all* functions.  This requires a second compiler pass.
+;; * assignments only affect the forms using the variables assigned to,
+;;   so keep lists of used and affected variables around.  this would help
+;;   to get rid of PROG1-type constructions like
+;;     (let ((t1 FORM)) (setq VAR FORM2) t1)
+;;   where FORM does not depend on VAR
 ;; * maybe replace dots with dashes in function names
 ;; * don't name the temporary variables occuring in while$ "ARGnn"
 ;; * propagate types when they get more specific:
@@ -75,7 +83,7 @@
 ;;; Capturing the computation in effect
 
 (defstruct variable
-  "A typed variable"
+  "A typed Lisp variable"
   name
   type)
 
@@ -90,7 +98,9 @@
   form					; a Lisp form OR
   literal				; a BST symbol or function body
   types
-  side-effects-p)
+  side-effects-p
+  used-functions
+  assigned-functions)
 
 (defvar *form-bindings* ()
   "A list of BINDINGs that keeps track of all forms that cannot be
@@ -201,7 +211,7 @@ the actual type of the delivered value, and SIDE-EFFECTS-P."
 			 ((and (type= available-type '(boolean))
 			       (type= type '(integer)))
 			  (return-from pop-form
-			    (values `(if ,lisp-form 1 0))))
+			    (values `(if ,lisp-form 1 0) '(boolean) side-effects-p)))
 			 ((null-type effective-type)
 			  (bst-compile-error "Type mismatch: expecting ~A, got ~A."
 					     type available-type))
@@ -269,12 +279,32 @@ the actual type of the delivered value, and SIDE-EFFECTS-P."
 
 ;;; Packaging the computed data
 
-(defun max-side-effects (a b)
+(defun max-side-effects (a b)		;deprecated
   "Compute the maximum of the side-effects A and B."
   (case a
     ((nil) b)
     (:assignment :assignment)
     (t (if (eql b :assignment) :assignment a))))
+
+;; TODO: we will use this function to consolidate the multiple-value
+;; stuff and to keep track of used and assigned-to functions.  While
+;; we're at it, make BINDING-FORM a MVFORM instead of a Lisp form and
+;; get rid of BINDING-SIDE-EFFECTS-P.
+(defun make-compound-mvform (&key form types side-effects-p used-functions assigned-functions
+			     component-mvforms)
+  "Make an MVFORM from the given keyword parameters but combine with
+the SIDE-EFFECTS-P, USED-FUNCTIONS and ASSIGNED-FUNCTIONS of the
+elements of the list COMPONENT-MVFORMS."
+  (make-mvform :form form
+	       :types types
+	       :side-effects-p (or side-effects-p
+				   (some #'mvform-side-effects-p component-mvforms))
+	       :used-functions
+	       (union used-functions
+		      (reduce #'union (mapcar #'mvform-used-functions component-mvforms)))
+	       :assigned-functions
+	       (union assigned-functions
+		      (reduce #'union (mapcar #'mvform-assigned-functions component-mvforms)))))
 
 (defun package-as-body ()
   "Build a Lisp body corresponding to the computation captured in
@@ -333,7 +363,7 @@ LISP-FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P."
 			     side-effects-p free-variables)
       (package-as-body)
     (values (case (length body)
-	      (0 `nil)
+	      (0 `(values))
 	      (1 (car body))
 	      (t `(progn ,@body)))
 	    argument-types result-types side-effects-p
@@ -381,6 +411,26 @@ special forms by directly manipulating the current compiler data.")
       (push-form mvform-1)
       (push-form mvform-2)))
 
+(define-bst-special-form "="
+    (multiple-value-bind (form-1 type-1 side-effects-p-1)
+	(pop-form t :need-variable nil)
+      (multiple-value-bind (form-2 type-2 side-effects-p-2)
+	  (pop-form type-1 :need-variable nil)
+	(let ((form (cond
+		      ((type= type-2 '(boolean))
+		       `(eql ,form-1 ,form-2))
+		      ((type= type-2 '(integer))
+		       `(= ,form-1 ,form-2))
+		      ((type= type-2 '(string))
+		       `(string= ,form-1 ,form-2))
+		      (t
+		       `(equal ,form-1 ,form-2)))))
+	  (push-form (make-mvform :form form
+				  :types (list '(boolean))
+				  :side-effects-p
+				  (max-side-effects side-effects-p-1
+						    side-effects-p-2)))))))
+	
 (define-bst-special-form ":="
     (let* ((var (pop-literal))
 	   (value-form (pop-form t :need-variable nil)))
@@ -402,25 +452,37 @@ special forms by directly manipulating the current compiler data.")
 but try to beautify the result by using COND rather than IF in certain cases."
   (let ((then-operator (and (consp then-form) (car then-form)))
 	(else-operator (and (consp else-form) (car else-form))))
-    (if (or (eql then-operator 'progn)
-	    (member else-operator '(if progn cond)))
-	;; beautify the condition using `cond'
-	`(cond
-	  (,val-form ,@(if (eql then-operator 'progn)
-			   (cdr then-form)
-			   (list then-form)))
-	  ,@(case else-operator
-		  (progn `((t ,@(cdr else-form))))
-		  (if `((,(cadr else-form)
-			 ,(caddr else-form))
-			(t
-			 ,(cadddr else-form))))
-		  (cond (cdr else-form))
-		  (t `((t ,else-form)))))
-	;; normal if
-	`(if ,val-form
-	  ,then-form
-	  ,else-form))))  
+    (cond
+      ((equal then-form '(values)) ;; we have, in fact, an `unless'
+       `(unless ,val-form
+	 ,@(if (eql else-operator 'progn)
+	       (cdr else-form)
+	       (list else-form))))
+      ((equal else-form '(values)) ;; we have, in fact, a `when'
+       `(when ,val-form
+	 ,@(if (eql then-operator 'progn)
+	       (cdr then-form)
+	       (list then-form))))
+      ((or (eql then-operator 'progn)
+	   (member else-operator '(if progn cond)))
+       ;; beautify the condition using `cond'
+       `(cond
+	 (,val-form ,@(if (eql then-operator 'progn)
+			  (cdr then-form)
+			  (list then-form)))
+	 ,@(case else-operator
+		 (progn `((t ,@(cdr else-form))))
+		 (if `((,(cadr else-form)
+			,(caddr else-form))
+		       (t
+			,(cadddr else-form))))
+		 (cond (cdr else-form))
+		 (t `((t ,else-form))))))
+      (t 
+       ;; normal if
+       `(if ,val-form
+	 ,then-form
+	 ,else-form)))))  
 
 (defun bst-compile-literal (literal stack &key (borrowing-allowed t))
   "Compile a BST function LITERAL , which is a symbol, designating a
@@ -563,27 +625,28 @@ BODY, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P, and FREE-VARIABLES."
 	(funcall special-form)
 	(let* ((bst-function (get-bst-function function-name))
 	       (arg-types (bst-function-argument-types bst-function))
+	       (side-effects-p (bst-function-side-effects-p bst-function))
 	       (arg-forms (nreverse
 			   (mapcar (lambda (type)
-				     ;; `:need-variable nil' is sufficient
-				     ;; but might want to say :if-side-effects
-				     ;; for aesthetic reasons:
-				     (pop-form type :need-variable nil
-					       ;;:if-side-effects
-					       ))
+				     (multiple-value-bind (form actual-type side-eff)
+					 (pop-form type :need-variable nil)
+				       (declare (ignore actual-type))
+				       (setq side-effects-p
+					     (max-side-effects side-effects-p side-eff))
+				       form))
 				   (reverse arg-types))))
 	       (result-types (bst-function-result-types bst-function)))
 	  (cond
 	    ((bst-function-lisp-form-maker bst-function)
 	     (push-form (make-mvform :form (apply (bst-function-lisp-form-maker bst-function)
-					     arg-forms)
-				:types result-types
-				:side-effects-p (bst-function-side-effects-p bst-function))))
+						  arg-forms)
+				     :types result-types
+				     :side-effects-p side-effects-p)))
 	    (t				; normal function call
 	     (push-form (make-mvform :form (cons (bst-function-lisp-name bst-function)
-					    arg-forms)
-				:types result-types
-				:side-effects-p (bst-function-side-effects-p bst-function)))))))))
+						 arg-forms)
+				     :types result-types
+				     :side-effects-p (bst-function-side-effects-p bst-function)))))))))
 
 (defun compile-body (body)
   (let ((*currently-compiled-body* body))
@@ -669,7 +732,7 @@ ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P."
     (with-open-file (*lisp-stream* lisp-file :direction :output)
       (with-open-file (bst-stream bst-file)
 	(format *lisp-stream*
-		";;;; This is a -*- Common-Lisp -*- program, automatically translated~%;;;; from the BibTeX style file `~A'~%;;;; by the CL-BibTeX compiler ($Revision: 1.5 $).~%"
+		";;;; This is a -*- Common-Lisp -*- program, automatically translated~%;;;; from the BibTeX style file `~A'~%;;;; by the CL-BibTeX compiler ($Revision: 1.6 $).~%"
 		bst-file)
 	(get-bst-commands-and-process bst-stream)
 	(lisp-write `(defun ,(intern (string-upcase (pathname-name bst-file))) ()
@@ -697,13 +760,22 @@ ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P."
 (compile-bst-fun '("can't use both volume and number if series info is missing"
 		   WARNING$ "in BibTeX entry type `" TYPE$ * "'" * TOP$))
 (compile-bst-fun '("abc" top$))
+(compile-bst-fun '(1 (1 'global.max$ |:=|) (newline$) if$) )
+
+(with-input-from-string (*bst-stream* "{ booktitle empty$ { \"\" } { editor empty$ { booktitle } { booktitle add.space.if.necessary \"(\" * format.nonauthor.editors * \")\" * } if$ } if$ } ")
+  (bst-read))
+(compile-bst-fun '(crossref EMPTY$ ("")
+ (crossref EMPTY$ (crossref)
+  (crossref "A" "(" * 1 'global.max$ |:=| * ")" *)
+  IF$)
+ IF$))
 
 (progn (compile-bst-file (kpathsea:find-file "amsalpha-xx.bst")
 			 "/tmp/compiled-bst.lisp")
        (load "/tmp/compiled-bst.lisp" :if-source-newer :compile)
        (cl-bibtex "ibm-theory" 'amsalpha-xx))
 
-(compile-bst-file (kpathsea:find-file "geralpha.bst")
+(compile-bst-file "test.bst"
 		  "/tmp/compiled-bst.lisp")
 
 |#
