@@ -8,6 +8,28 @@
 
 ;;; The compiler front-end
 
+(defvar *bibtex-pprint-dispatch*
+  (let ((pprint-dispatch (copy-pprint-dispatch)))
+    #-clisp				; CLISP says "Lisp stack overflow. RESET"
+    (set-pprint-dispatch '(cons (member DEFINE-BIBTEX-STYLE))
+			 (lambda (*standard-output* obj)
+			   (pprint-logical-block (*standard-output* obj :prefix "(" :suffix ")")
+			     (write (pprint-pop))
+			     (write-char #\Space)
+			     (pprint-newline :miser)
+			     (pprint-indent :current 0)
+			     (write (pprint-pop))
+			     (pprint-indent :block 1)
+			     (pprint-newline :mandatory)
+			     (write (pprint-pop))
+			     (loop (pprint-exit-if-list-exhausted)
+				   (write-char #\Space)
+				   (pprint-newline :linear)
+				   (write (pprint-pop)))))
+			 0
+			 pprint-dispatch)
+    pprint-dispatch))
+
 (defun make-entry-type-function-alist ()
   (loop for fun being each hash-value in *bst-functions*
         when (and (member (bst-function-type fun)
@@ -19,36 +41,84 @@
 	collect (cons (bst-function-name fun)
 		      (bst-function-lisp-name fun))))
 
-(defun compile-bst-file (bst-file lisp-file)
-  (let ((*bib-macros* (make-hash-table))
-	(*bst-compiling* t)
-	(*main-lisp-body* ())
-	(*bst-functions* (builtin-bst-functions)))
-    (with-open-file (*lisp-stream* lisp-file :direction :output)
-      (with-open-file (bst-stream bst-file)
-	(format *lisp-stream*
-		";;;; This is a -*- Common-Lisp -*- program, automatically translated~%;;;; from the BibTeX style file `~A'~%;;;; by the CL-BibTeX compiler (version ~A).~%"
-		(namestring bst-file) +version+)
-	(let* ((package-name (concatenate 'string "BIBTEX-STYLE-"
-					  (string-upcase 
-					   (pathname-name bst-file))))
-	       (use-list '("COMMON-LISP" "BIBTEX-RUNTIME" "BIBTEX-COMPILER"))
-	       (temp-package-name (gentemp "BIBTEX-STYLE-"))
-	       (temp-package (make-package temp-package-name :use use-list))
-	       (*bib-entries-symbol* (intern "BIB-ENTRIES" temp-package)))
-	  (unwind-protect
-	       (progn
-		 (lisp-write `(defpackage ,package-name
-			       (:use ,@use-list)))
-		 (lisp-write `(in-package ,package-name))
-		 (let ((*package* temp-package))
-		   (get-bst-commands-and-process bst-stream)
-		   (lisp-write `(define-bibtex-style ,(pathname-name bst-file) 
-				 (let ((*bib-entry-type-functions*
-					',(make-entry-type-function-alist))
-				       ,*bib-entries-symbol*)
-				   ,@(reverse *main-lisp-body*))))))
-	    (delete-package temp-package)))))))
+(defun make-macro-set-form ()
+  (loop for macro being each hash-key in *bib-macros*
+	and value being each hash-value in *bib-macros*
+	nconcing `((gethash ,macro *bib-macros*) ,value) into setf-args
+	finally (return `(setf ,@setf-args))))		   
+
+(defun compile-bst-file (bst-file lisp-file &key (make-variables-lexical t))
+  "Compile the BibTeX style file BST-FILE to a Common Lisp BibTeX
+style file LISP-FILE.  If :MAKE-VARIABLES-LEXICAL is true (the
+default), make a second compiler pass, where some variables are turned
+into lexical variables."
+  (with-open-file (bst-stream bst-file)
+    (let* ((package-name (concatenate 'string "BIBTEX-STYLE-"
+				      (string-upcase 
+				       (pathname-name bst-file))))
+	   (use-list '("COMMON-LISP" "BIBTEX-RUNTIME" "BIBTEX-COMPILER"))
+	   (temp-package-name (gentemp "BIBTEX-STYLE-"))
+	   temp-package)
+      (unwind-protect
+	   (progn
+	     (setq temp-package (make-package temp-package-name :use use-list))
+	     (let* ((*bst-package* temp-package)
+		    (*bib-entries-symbol* (bst-intern "BIB-ENTRIES"))
+		    (*bib-macros* (make-hash-table :test #'equalp))
+		    (*bst-compiling* t)
+		    (*main-lisp-body* '())
+		    (*bst-definition-sequence* '())
+		    (*bst-functions* (builtin-bst-functions)))
+	       (get-bst-commands-and-process bst-stream)
+	       (let ((*lexicals* (and make-variables-lexical
+				      (make-some-variables-lexical))))
+		 (when *lexicals*
+		   (format *error-output* "Making variables lexical: ~{ ~S~}~%"
+			   *lexicals*)
+		   ;; Recompile with lexical variables
+		   (dolist (bst-function (reverse *bst-definition-sequence*))
+		     (when (and (bst-function-p bst-function)
+				(eq (bst-function-type bst-function)
+				    'compiled-wiz-defined))
+		       (compile-bst-function bst-function))))
+		 (with-open-file (lisp-stream lisp-file :direction :output)
+		   (flet ((lisp-write (arg)
+			    (let ((*print-case* :downcase)
+				  (*print-pprint-dispatch* *bibtex-pprint-dispatch*)
+				  (*package* *bst-package*))
+			      (pprint arg lisp-stream))
+			    (terpri lisp-stream)))
+		     (format lisp-stream
+			     ";;;; This is a -*- Common-Lisp -*- program, automatically translated
+~%;;;; from the BibTeX style file `~A'~%;;;; by the CL-BibTeX compiler (version ~A).~%"
+			     (namestring bst-file) +version+)
+		     (lisp-write `(defpackage ,package-name
+				   (:use ,@use-list)
+				   (:shadow ,@(mapcar 'copy-symbol
+						      (package-shadowing-symbols *bst-package*)))))
+		     (lisp-write `(in-package ,package-name))
+		     (dolist (item (reverse *bst-definition-sequence*))
+		       (etypecase item
+			 (string	; a comment
+			  (princ item lisp-stream))
+			 (bst-function ; a variable or wizard-defined function
+			  (ecase (bst-function-type item)
+			    (int-global-var
+			     (unless (bst-function-lexical-p item)
+			       (lisp-write `(defvar ,(bst-function-lisp-name item) 0))))
+			    (str-global-var
+			     (unless (bst-function-lexical-p item)
+			       (lisp-write `(defvar ,(bst-function-lisp-name item) ""))))
+			    (compiled-wiz-defined
+			     (print-bst-function-info item lisp-stream)
+			     (lisp-write (bst-function-defun-form item)))))))
+		     (lisp-write `(define-bibtex-style ,(pathname-name bst-file) 
+				   (let ((*bib-entry-type-functions*
+					  ',(make-entry-type-function-alist))
+					 ,*bib-entries-symbol*)
+				     ,(make-macro-set-form)
+				     ,@(reverse *main-lisp-body*)))))))))
+	(delete-package temp-package)))))
 
 ;;; The BibTeX program
 
@@ -118,7 +188,7 @@ TeX commands in the file `FILE-STEM.aux'.  Find the named bibliography
 style via `find-bibtex-style'; it can be overridden programmatically
 using the :STYLE argument (a string or a function).  Print the
 formatted bibliography to the file `FILE-STEM.bbl'."
-  (let ((*bib-macros* (make-hash-table))
+  (let ((*bib-macros* (make-hash-table :test #'equalp))
 	(*bib-database* (make-hash-table :test #'equalp))
 	(*bib-preamble* "")
 	(*bib-entries* ())
