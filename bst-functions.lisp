@@ -15,9 +15,14 @@
 		   :initarg :used-variables :initform ())
    (assigned-variables :accessor side-effects-assigned-variables
 		       :initarg :assigned-variables :initform ())
+   ;; unconditionally assigned variables are always assigned in the
+   ;; form; in fact, they are assigned before they are referenced
    (unconditionally-assigned-variables :accessor side-effects-unconditionally-assigned-variables
 				       :initarg :unconditionally-assigned-variables
-				       :initform ()))
+				       :initform ())
+   (variables-used-before-assigned :accessor side-effects-variables-used-before-assigned
+				   :initarg :variables-used-before-assigned
+				   :initform ()))
   (:documentation
    "A description of the side-effects of a computation"))
 
@@ -35,6 +40,8 @@
   lisp-form-maker
   (side-effects null-side-effects)
   setter-form-maker
+  defun-form
+  lexical-p
   ;; For use in the BST interpreter:
   value					; value as a variable
   body
@@ -90,7 +97,8 @@
 			   :setter-form-maker #'(lambda (value-form)
 						  `(setf (gethash ,entry *bib-entry*)
 						    ,value-form))
-			   :side-effects (make-instance 'side-effects :used-variables (list entry))
+			   :side-effects (make-instance 'side-effects :used-variables (list entry)
+							:variables-used-before-assigned (list entry))
 			   :type func-type
 			   :argument-types '()
 			   :result-types (list type))))
@@ -99,6 +107,7 @@
   (let ((variable (string variable)))
     (setf (gethash variable hash-table)
 	  (make-bst-function :name variable
+			     :lisp-name lisp-name
 			     :setter #'(lambda (value)
 					 (setf (bst-function-value
 						(gethash variable hash-table))
@@ -106,7 +115,8 @@
 			     :lisp-form-maker #'(lambda () lisp-name)
 			     :setter-form-maker #'(lambda (value-form)
 						    `(setq ,lisp-name ,value-form))
-			     :side-effects (make-instance 'side-effects :used-variables (list variable))
+			     :side-effects (make-instance 'side-effects :used-variables (list variable)
+							  :variables-used-before-assigned (list variable))
 			     :type func-type
 			     :argument-types '()
 			     :result-types (list type)
@@ -121,19 +131,26 @@
 		   (gethash key *builtin-bst-functions*)))
     table))
 
+(defvar *bst-package* nil
+  "A temporary package where the BST compiler puts the symbols
+generated for the BibTeX style file")
+
 (defun bst-name-to-lisp-name (bst-name &optional (type :function))
   (setq bst-name (substitute #\- #\. (string-upcase (string bst-name))))
   (ecase type
     ((:function :lexical)
      (if (string-equal bst-name "T")
-	 (gentemp "TEMP")
-	 (intern bst-name)))
+	 (gentemp "TEMP" *bst-package*)
+	 (bst-intern bst-name)))
     ((:variable)
      (if (string-equal bst-name "T")
-	 (intern "*T*")
-	 (intern (concatenate 'string "*" bst-name "*"))))))
+	 (bst-intern "*T*")
+	 (bst-intern (concatenate 'string "*" bst-name "*"))))))
 
-      
+(defun bst-intern (name)
+  "Intern NAME into *BST-PACKAGE*, shadowing imported symbols."
+  (shadow name *bst-package*)
+  (intern name *bst-package*))
 
 (defun check-for-already-defined-function (name)
   (unless (symbolp name)
