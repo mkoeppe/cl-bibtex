@@ -931,8 +931,41 @@ alone.  Only those letters at brace-level 0 are affected."
        (subseq group 0 (min num-tokens (length group)))
        s))))
 
-;;;
+;;; The approximate calculation of text widths
 
+(defconstant +cmr10-character-widths+
+  '((#\Space . 278) (#\! . 278) (#\" . 500) (#\# . 833) (#\$ . 500) (#\% . 833)
+    (#\& . 778) (#\' . 278) (#\( . 389) (#\) . 389) (#\* . 500) (#\+ . 778)
+    (#\, . 278) (#\- . 333) (#\. . 278) (#\/ . 500) (#\0 . 500) (#\1 . 500)
+    (#\2 . 500) (#\3 . 500) (#\4 . 500) (#\5 . 500) (#\6 . 500) (#\7 . 500)
+    (#\8 . 500) (#\9 . 500) (#\: . 278) (#\; . 278) (#\< . 278) (#\= . 778)
+    (#\> . 472) (#\? . 472) (#\@ . 778) (#\A . 750) (#\B . 708) (#\C . 722)
+    (#\D . 764) (#\E . 681) (#\F . 653) (#\G . 785) (#\H . 750) (#\I . 361)
+    (#\J . 514) (#\K . 778) (#\L . 625) (#\M . 917) (#\N . 750) (#\O . 778)
+    (#\P . 681) (#\Q . 778) (#\R . 736) (#\S . 556) (#\T . 722) (#\U . 750)
+    (#\V . 750) (#\W . 1028) (#\X . 750) (#\Y . 750) (#\Z . 611) (#\[ . 278)
+    (#\\ . 500) (#\] . 278) (#\^ . 500) (#\_ . 278) (#\` . 278) (#\a . 500)
+    (#\b . 556) (#\c . 444) (#\d . 556) (#\e . 444) (#\f . 306) (#\g . 500)
+    (#\h . 556) (#\i . 278) (#\j . 306) (#\k . 528) (#\l . 278) (#\m . 833)
+    (#\n . 556) (#\o . 500) (#\p . 556) (#\q . 528) (#\r . 392) (#\s . 394)
+    (#\t . 389) (#\u . 556) (#\v . 528) (#\w . 722) (#\x . 528) (#\y . 528)
+    (#\z . 444) (#\{ . 500) (#\| . 1000) (#\} . 500) (#\~ . 500)
+    (("ss") . 500) (("ae") . 722) (("oe") . 778) (("AE") . 903) (("OE") . 1014))
+  "An alist associating characters with their widths.  The widths here
+are taken from Stanford's June '87 cmr10 font and represent hundredths
+of a point (rounded), but since they're used only for relative
+comparisons, the units have no meaning.")
+
+(defun bibtex-string-width (string &key (widths +cmr10-character-widths+))
+  "Compute the approximate width of STRING by summing the WIDTHS of the
+individual characters.  BibTeX special characters are handled
+specially."
+  ;; FIXME: Handle special chars
+  (loop for char across string
+	as assoc = (assoc char widths)
+	when assoc
+	sum (cdr assoc)))
+  
 #|
 
 (setq *bib-macros* (make-hash-table))

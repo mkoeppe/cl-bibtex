@@ -23,7 +23,7 @@
 	   "ADD-PERIOD-UNLESS-SENTENCE-END"
 	   "WHITESPACE-P" "EMPTY-FIELD-P" "BIBTEX-STRING-PURIFY"
 	   "BIBTEX-STRING-DOWNCASE" "BIBTEX-STRING-UPCASE" "BIBTEX-STRING-TITLEDOWNCASE"
-	   "BIBTEX-STRING-PREFIX"
+	   "BIBTEX-STRING-PREFIX" "BIBTEX-STRING-WIDTH"
 	   "BIB-WARN" "BIB-WARN*" "BIB-ERRROR" "BIB-FATAL"
 	   #:*err-count* #:*history*
 	   #:+spotless-history+ #:+warning-message+ #:+error-message+ #:+fatal-message+

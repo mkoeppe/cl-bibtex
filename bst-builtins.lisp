@@ -195,7 +195,7 @@
 		`(bib-warn* ,warning))
   :side-effects-p t)
 
-(mismatch '(1 2 3) '(1 2) :end1 2)
+#|(mismatch '(1 2 3) '(1 2) :end1 2)|#
 
 (define-bst-primitive "while$" ((predicate (symbol body)) (body (symbol body))) ()
   :interpreted
@@ -203,7 +203,7 @@
       ((not (bst-execute-stack-literal/pop predicate '(boolean))))
     (bst-execute-stack-literal body)))
 	
-(register-bst-primitive "width$" '((string)) '((integer)) 'length) ; fixme
+(register-bst-primitive "width$" '((string)) '((integer)) 'bibtex-string-width)
 
 (define-bst-primitive "write$" ((s (string))) ()
   :interpreted (princ s *bbl-output*)
