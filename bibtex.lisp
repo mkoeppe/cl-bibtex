@@ -41,17 +41,21 @@
 	collect (cons (bst-function-name fun)
 		      (bst-function-lisp-name fun))))
 
-(defun make-macro-set-form ()
+(defun make-macro-set-forms ()
   (loop for macro being each hash-key in *bib-macros*
 	and value being each hash-value in *bib-macros*
 	nconcing `((gethash ,macro *bib-macros*) ,value) into setf-args
-	finally (return `(setf ,@setf-args))))		   
+	finally (return (if (null setf-args)
+			    '()
+			    `((setf ,@setf-args))))))		   
 
-(defun compile-bst-file (bst-file lisp-file &key (make-variables-lexical t))
+(defun compile-bst-file (bst-file lisp-file &key (make-variables-lexical t)
+				  (make-variables-constant t))
   "Compile the BibTeX style file BST-FILE to a Common Lisp BibTeX
-style file LISP-FILE.  If :MAKE-VARIABLES-LEXICAL is true (the
-default), make a second compiler pass, where some variables are turned
-into lexical variables."
+style file LISP-FILE.  If :MAKE-VARIABLES-LEXICAL or
+:MAKE-VARIABLES-CONSTANT is true (the default), make a second compiler
+pass, where some variables are turned into lexical variables or
+constant variables."
   (with-open-file (bst-stream bst-file)
     (let* ((package-name (concatenate 'string "BIBTEX-STYLE-"
 				      (string-upcase 
@@ -68,14 +72,21 @@ into lexical variables."
 		    (*bst-compiling* t)
 		    (*main-lisp-body* '())
 		    (*bst-definition-sequence* '())
+		    (*bst-function-call-sequence* '())
 		    (*bst-functions* (builtin-bst-functions)))
 	       (get-bst-commands-and-process bst-stream)
-	       (let ((*lexicals* (and make-variables-lexical
-				      (make-some-variables-lexical))))
+	       (let* ((constants (and make-variables-constant
+				      (make-some-variables-constant)))
+		      (*lexicals* (and make-variables-lexical
+				       (make-some-variables-lexical))))
+		 (when constants
+		   (format *error-output* "~&Making variables constant: ~{ ~S~}~%"
+			   constants))
 		 (when *lexicals*
-		   (format *error-output* "Making variables lexical: ~{ ~S~}~%"
-			   *lexicals*)
-		   ;; Recompile with lexical variables
+		   (format *error-output* "~&Making variables lexical: ~{ ~S~}~%"
+			   *lexicals*))
+		 (when (or *lexicals* constants)
+		   ;; Recompile with lexical and constant variables
 		   (dolist (bst-function (reverse *bst-definition-sequence*))
 		     (when (and (bst-function-p bst-function)
 				(eq (bst-function-type bst-function)
@@ -89,26 +100,35 @@ into lexical variables."
 			      (pprint arg lisp-stream))
 			    (terpri lisp-stream)))
 		     (format lisp-stream
-			     ";;;; This is a -*- Common-Lisp -*- program, automatically translated
-~%;;;; from the BibTeX style file `~A'~%;;;; by the CL-BibTeX compiler (version ~A).~%"
+			     ";;;; This is a -*- Common-Lisp -*- program, automatically translated~%~
+                              ~&;;;; from the BibTeX style file `~A'~%~
+                              ~&;;;; by the CL-BibTeX compiler (version ~A).~%"
 			     (namestring bst-file) +version+)
-		     (lisp-write `(defpackage ,package-name
-				   (:use ,@use-list)
-				   (:shadow ,@(mapcar 'copy-symbol
-						      (package-shadowing-symbols *bst-package*)))))
+		     (lisp-write
+		      `(defpackage ,package-name
+			 (:use ,@use-list)
+			 (:shadow
+			  ,@(sort (mapcar #'copy-symbol
+					  (package-shadowing-symbols
+					   *bst-package*))
+				  #'string-lessp :key #'symbol-name))))
 		     (lisp-write `(in-package ,package-name))
 		     (dolist (item (reverse *bst-definition-sequence*))
 		       (etypecase item
 			 (string	; a comment
 			  (princ item lisp-stream))
 			 (bst-function ; a variable or wizard-defined function
-			  (ecase (bst-function-type item)
-			    (int-global-var
-			     (unless (bst-function-lexical-p item)
-			       (lisp-write `(defvar ,(bst-function-lisp-name item) 0))))
-			    (str-global-var
-			     (unless (bst-function-lexical-p item)
-			       (lisp-write `(defvar ,(bst-function-lisp-name item) ""))))
+			  (case (bst-function-type item)
+			    ((int-global-var str-global-var)
+			     (cond
+			      ((bst-function-lexical-p item)
+			       nil)
+			      ((bst-function-constant-p item)
+			       (lisp-write `(defconstant ,(bst-function-lisp-name item)
+					      ,(bst-function-assigned-value-form item))))
+			      (t
+			       (lisp-write `(defvar ,(bst-function-lisp-name item)
+					      ,(bst-function-value item))))))
 			    (compiled-wiz-defined
 			     (print-bst-function-info item lisp-stream)
 			     (lisp-write (bst-function-defun-form item)))))))
@@ -116,7 +136,7 @@ into lexical variables."
 				   (let ((*bib-entry-type-functions*
 					  ',(make-entry-type-function-alist))
 					 ,*bib-entries-symbol*)
-				     ,(make-macro-set-form)
+				     ,@(make-macro-set-forms)
 				     ,@(reverse *main-lisp-body*)))))))))
 	(delete-package temp-package)))))
 
