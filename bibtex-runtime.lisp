@@ -622,7 +622,7 @@ many text characters.")
 	(full
 	 (princ (cdr token) stream))
 	(t ;; FIXME: Handle special characters here (415)
-	 (princ (char (cdr token) 0) stream))))))  a
+	 (princ (char (cdr token) 0) stream))))))
 
 (defun format-bibtex-name (stream format-string bibtex-name)
   (let ((string-output nil)
