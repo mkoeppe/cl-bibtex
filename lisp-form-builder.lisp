@@ -1,5 +1,5 @@
 ;;; A BibTeX re-implementation in Common Lisp - construct beautiful Lisp forms
-;;; Copr. 2001, 2002 Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>
+;;; Copr. 2001, 2002, 2003 Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>
 ;;; This is free software, licensed under GNU GPL (see file COPYING)
 
 (in-package bibtex-compiler)
@@ -90,3 +90,18 @@ are of this form, use the associativity of the operation to build
 	     `(not ,form)))
 	(t `(not ,form))))))
 
+(defun build-values-body (result-list)
+  "Build a Lisp body containing one form, `(values ,@RESULT-LIST).
+For zero or one values, make simpler constructions."
+  (case (length result-list)
+    (0 ())
+    (1 (list (car result-list)))
+    (t (list `(values ,@result-list)))))
+
+(defun build-progn-form (body)
+  "Build a Lisp form equivalent to `(progn ,@BODY).
+For the special case of an empty body, use `(values)."
+  (case (length body)
+    (0 `(values))
+    (1 (car body))
+    (t `(progn ,@body))))
