@@ -1,3 +1,15 @@
+A BibTeX system in Common Lisp
+******************************
+
+This project provides a replacement for the BibTeX program, written in
+Common Lisp. The aim is to enable the user to format bibliographic
+entries using Common Lisp programs, rather than using the stack
+language of BibTeX style files.
+
+The project pages are at 
+
+    http://www.freesoftware.fsf.org/cl-bibtex/
+
 Where to start
 ==============
 
