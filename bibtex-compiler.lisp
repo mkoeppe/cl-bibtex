@@ -8,9 +8,9 @@
   "Non-nil if we are compiling a Common Lisp program from the BST
 program, rather than interpreting the BST program.")
 
-(defvar *lisp-stream* nil
-  "A stream where we write the Common Lisp program equivalent to the
-BST program.")
+(defvar *bst-definition-sequence* '()
+  "A list of strings (comments) and BST-FUNCTION structures.  It
+records the definition order in the BST file.")
 
 (defvar *main-lisp-body* ()
   "A list collecting the forms corresponding to EXECUTE, ITERATE,
@@ -19,34 +19,6 @@ READ, REVERSE, and SORT commands in reverse order.")
 (defvar *bib-entries-symbol* nil
   "The name of the lexical variable in *main-lisp-body* that stores
 the bib entries.")
-
-(defvar *bibtex-pprint-dispatch*
-  (let ((pprint-dispatch (copy-pprint-dispatch)))
-    #-clisp				; CLISP says "Lisp stack overflow. RESET"
-    (set-pprint-dispatch '(cons (member DEFINE-BIBTEX-STYLE))
-			 (lambda (*standard-output* obj)
-			   (pprint-logical-block (*standard-output* obj :prefix "(" :suffix ")")
-			     (write (pprint-pop))
-			     (write-char #\Space)
-			     (pprint-newline :miser)
-			     (pprint-indent :current 0)
-			     (write (pprint-pop))
-			     (pprint-indent :block 1)
-			     (pprint-newline :mandatory)
-			     (write (pprint-pop))
-			     (loop (pprint-exit-if-list-exhausted)
-				   (write-char #\Space)
-				   (pprint-newline :linear)
-				   (write (pprint-pop)))))
-			 0
-			 pprint-dispatch)
-    pprint-dispatch))
-
-(defun lisp-write (arg)
-  (let ((*print-case* :downcase)
-	(*print-pprint-dispatch* *bibtex-pprint-dispatch*))
-    (pprint arg *lisp-stream*))
-  (terpri *lisp-stream*))
 
 ;; The type system.  NIL means no value fits, T means all values fit.
 ;; A list of symbols means values of all listed types fit.
@@ -166,12 +138,40 @@ applied to the parallel elements in LISTS."
 
 (defun max-side-effects (&rest effectss)
   "Compute the maximum of the side-effects EFFECTSS."
-  (make-instance 'side-effects
-		 :side-effects-p (some #'side-effects-side-effects-p effectss)
-		 :used-variables (apply #'set-union (mapcar #'side-effects-used-variables effectss))
-		 :assigned-variables (apply #'set-union (mapcar #'side-effects-assigned-variables effectss))
-		 :unconditionally-assigned-variables
-		 (apply #'set-union (mapcar #'side-effects-unconditionally-assigned-variables effectss))))   
+  (labels
+      ((max-sfx (a b)
+	 (make-instance 'side-effects
+			:side-effects-p
+			(or (side-effects-side-effects-p a)
+			    (side-effects-side-effects-p b))
+			:used-variables
+			(union (side-effects-used-variables a)
+			       (side-effects-used-variables b)
+			       :test 'equalp)
+			:assigned-variables
+			(union (side-effects-assigned-variables a)
+			       (side-effects-assigned-variables b)
+			       :test 'equalp)
+			:unconditionally-assigned-variables
+			;; side effects of A come first, so if we
+			;; have a reference to X in A and X is
+			;; unconditionally assigned in B, then X
+			;; is not unconditionally assigned in "A,
+			;; B".
+			(union (side-effects-unconditionally-assigned-variables a)
+			       (set-difference
+				(side-effects-unconditionally-assigned-variables b)
+				(side-effects-used-variables a)
+				:test 'equalp)
+			       :test 'equalp)
+			:variables-used-before-assigned
+			(union (side-effects-variables-used-before-assigned a)
+			       (set-difference
+				(side-effects-variables-used-before-assigned b)
+				(side-effects-unconditionally-assigned-variables a)
+				:test 'equalp)
+			       :test 'equalp))))
+    (reduce #'max-sfx effectss :initial-value null-side-effects)))
 
 (defun remove-variables-from-side-effects (variables side-effects)
   "VARIABLES is a list of strings or symbols to be removed from any
@@ -189,12 +189,16 @@ mention in SIDE-EFFECTS.  Return the resulting side effects."
 		 :used-variables
 		 (set-difference (side-effects-used-variables side-effects)
 				 variables
+				 :test 'equalp)
+		 :variables-used-before-assigned
+		 (set-difference (side-effects-variables-used-before-assigned side-effects)
+				 variables
 				 :test 'equalp)))
 
 (defvar *bst-gentemp-counter* 0)
 
 (defun bst-gentemp (prefix)
-  (intern (format nil "~A~A" prefix (incf *bst-gentemp-counter*))))  
+  (bst-intern (format nil "~A~A" prefix (incf *bst-gentemp-counter*))))  
 
 (defun make-binding-and-push-variables (mvform)
   "Make a binding for all values delivered by MVFORM and push the
@@ -382,7 +386,7 @@ FREE-VARIABLES."
 	  (setq side-effects
 		(remove-variables-from-side-effects
 		 (mapcar #'variable-name (binding-variables binding))
-		 (max-side-effects side-effects (mvform-side-effects (binding-mvform binding)))))
+		 (max-side-effects (mvform-side-effects (binding-mvform binding)) side-effects)))
 	  (case (length (binding-variables binding))
 	    (0 (make-let*)
 	       (setq body (cons (mvform-form (binding-mvform binding))
@@ -618,7 +622,7 @@ FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P, and FREE-VARIABLES."
 		   ;; is NIL->STRING.
 		   ;; FIXME: This could be easily generalized on a better day.
 		   (format *error-output*
-			   "While compiling wizard-defined function `~S':~% Warning: Employing the producer/modifier while loop trick.~%"
+			   "While compiling wizard-defined function `~A':~% Warning: Employing the producer/modifier while loop trick.~%"
 			   *currently-compiled-function*)			   
 		   (do ((then-arg-types (reverse then-arg-types) (cdr then-arg-types))
 			(else-arg-types (reverse else-arg-types) (cdr else-arg-types)))
@@ -653,19 +657,22 @@ different net number of values: ~%~A -> ~A vs. ~A -> ~A"
 		  (bst-compile-literal then-literal then-stack :borrowing-allowed nil)
 		(declare (ignore then-arg-types))
 		(let* ((res-types (mapcar #'type-union then-res-types else-res-types))
-		       (side-effects
-			(max-side-effects (mvform-side-effects val-mvform)
-					  then-side-effects else-side-effects)))
-		  (setf (side-effects-unconditionally-assigned-variables side-effects)
-			(union (side-effects-unconditionally-assigned-variables
-				(mvform-side-effects val-mvform))
-			       (intersection (side-effects-unconditionally-assigned-variables then-side-effects)
-					     (side-effects-unconditionally-assigned-variables else-side-effects)
-					     :test 'equalp)
+		       (then-or-else-side-effects
+			(max-side-effects then-side-effects else-side-effects)))
+		  (setf (side-effects-unconditionally-assigned-variables then-or-else-side-effects)
+			(intersection (side-effects-unconditionally-assigned-variables then-side-effects)
+				      (side-effects-unconditionally-assigned-variables else-side-effects)
+				      :test 'equalp)
+			(side-effects-variables-used-before-assigned then-or-else-side-effects)
+			(union (side-effects-variables-used-before-assigned then-side-effects)
+			       (side-effects-variables-used-before-assigned else-side-effects)
 			       :test 'equalp))
-		  (push-mvform :form (build-if-form (mvform-form val-mvform) then-form else-form)
-			       :types res-types
-			       :side-effects side-effects)))))))))   
+		  (let ((side-effects
+			 (max-side-effects (mvform-side-effects val-mvform)
+					   then-or-else-side-effects)))
+		    (push-mvform :form (build-if-form (mvform-form val-mvform) then-form else-form)
+				 :types res-types
+				 :side-effects side-effects))))))))))   
 
 (define-bst-special-form "pop$"
     (pop-form t :need-variable :if-side-effects))
@@ -697,7 +704,7 @@ BODY, LOOP-VARS, LOOP-VAR-TYPES, INIT-TYPES and SIDE-EFFECTS."
 	   (side-effects
 	    (apply #'max-side-effects
 		   (make-instance 'side-effects :assigned-variables assigned-variables)
-		   (mapcar #'mvform-side-effects mvforms))))			      
+		   (mapcar #'mvform-side-effects mvforms))))
       (case (length *borrowed-variables*)
 	(0 nil)
 	(1 (push-mvform :form `(setq ,@psetq-args)
@@ -780,7 +787,8 @@ BODY, LOOP-VARS, LOOP-VAR-TYPES, INIT-TYPES and SIDE-EFFECTS."
 		    :types (list (variable-type (cdr it)))
 		    :side-effects
 		    (make-instance 'side-effects
-				   :used-variables (list var-name)))))
+				   :used-variables (list var-name)
+				   :variables-used-before-assigned (list var-name)))))
       (t
        (let* ((bst-function (get-bst-function function-name))
 	      (arg-types (bst-function-argument-types bst-function))
@@ -842,31 +850,46 @@ ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS."
     (compile-body (list bst-name))
     (package-as-form)))	
 
-(defun compile-bst-function (bst-name function-definition stream)
-  (let ((*currently-compiled-function* bst-name)
-	(lisp-name (bst-name-to-lisp-name bst-name :function)))
+(defun print-bst-function-info (bst-function stream)
+  "Print information on arity and side effects of BST-FUNCTION to
+STREAM as Lisp comments."
+  (let ((side-effects (bst-function-side-effects bst-function)))
+    #-clisp
+    (format stream
+	    "~%~<;; ~@;~:S --> ~:S ~:[~;with side-effects ~]~:[~;~%with assignment to~:*~{ ~S~}~]~:[~;~%with possible assignment to~:*~{ ~S~}~]~:[~;~%with reference to~:*~{ ~S~}~]~:[~;~%with reference-before-assignment to~:*~{ ~S~}~]~:>"
+	    (list (bst-function-argument-types bst-function)
+		  (bst-function-result-types bst-function)
+		  (side-effects-side-effects-p side-effects)
+		  (side-effects-unconditionally-assigned-variables side-effects)
+		  (set-difference (side-effects-assigned-variables side-effects)
+				  (side-effects-unconditionally-assigned-variables side-effects)
+				  :test 'equalp)			
+		  (side-effects-used-variables side-effects)
+		  (side-effects-variables-used-before-assigned side-effects)))))  
+
+(defun compile-bst-function (bst-function)
+  (let* ((bst-name (bst-function-name bst-function))
+	 (*currently-compiled-function* bst-name)
+	 (lisp-name (bst-name-to-lisp-name bst-name :function)))
     (handler-case 
 	(multiple-value-bind (defun-form argument-types
 				 result-types side-effects)
-	    (bst-compile-defun lisp-name function-definition)
-	  #-clisp    ; CLISP does not seem to handle ~< ... ~:> properly
-	  (format stream
-		  "~%~<;; ~@;~:S --> ~:S ~:[~;with side-effects ~]~:[~;~%with assignment to~:*~{ ~S~}~]~:[~;~%with possible assignment to~:*~{ ~S~}~]~:[~;~%with reference to~:*~{ ~S~}~]~:>"
-		  (list argument-types result-types
-			(side-effects-side-effects-p side-effects)
-			(side-effects-unconditionally-assigned-variables side-effects)
-			(set-difference (side-effects-assigned-variables side-effects)
-					(side-effects-unconditionally-assigned-variables side-effects)
-					:test 'equalp)			
-			(side-effects-used-variables side-effects)))
-	  (lisp-write defun-form)
-	  (setf (gethash (string bst-name) *bst-functions*)
-		(make-bst-function :name (string bst-name)
-				   :lisp-name lisp-name
-				   :type 'compiled-wiz-defined
-				   :argument-types argument-types
-				   :result-types result-types
-				   :side-effects side-effects)))
+	    (bst-compile-defun lisp-name
+			       (bst-function-body bst-function))
+	  #-clisp  ; CLISP does not seem to handle ~< ... ~:> properly
+	  
+	  (setf (bst-function-lisp-name bst-function)
+		lisp-name
+		(bst-function-type bst-function)
+		'compiled-wiz-defined
+		(bst-function-argument-types bst-function)
+		argument-types
+		(bst-function-result-types bst-function)
+		result-types
+		(bst-function-side-effects bst-function)
+		side-effects
+		(bst-function-defun-form bst-function)
+		defun-form))
       (bst-compiler-error (condition)
 	(format *error-output*
 		"While compiling wizard-defined function `~S':~%~A~%"
@@ -874,7 +897,7 @@ ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS."
 
 (defun compile-bst-fun (definition &key int-vars str-vars)
   "A debugging aid."
-  (let ((*bib-macros* (make-hash-table))
+  (let ((*bib-macros* (make-hash-table :test 'equalp))
 	(*bst-compiling* t)
 	(*bst-functions* (builtin-bst-functions)))
     (dolist (var int-vars)
@@ -882,6 +905,28 @@ ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS."
     (dolist (var str-vars)
       (register-bst-global-var var var 'str-global-var '(string) "" *bst-functions*))
     (bst-compile-defun nil definition)))
+
+(defun make-some-variables-lexical ()
+  ;; If in every function where variable X is used, it is assigned
+  ;; before any reference, then there cannot be inter-function data
+  ;; flow through variable X.  Hence, we can make the variable lexical
+  ;; in every function where it is used.
+  (loop for bst-function being each hash-value in *bst-functions*
+	when (member (bst-function-type bst-function)
+		     '(str-global-var int-global-var))
+	do (setf (bst-function-lexical-p bst-function) t))
+  (loop for bst-function being each hash-value in *bst-functions*
+	when (eq (bst-function-type bst-function) 'compiled-wiz-defined)
+	do (dolist (variable (side-effects-variables-used-before-assigned
+			      (bst-function-side-effects bst-function)))
+	     (let ((bst-function (get-bst-function variable)))
+	       (setf (bst-function-lexical-p bst-function) nil))))
+  (loop for bst-function being each hash-value in *bst-functions*
+	when (and (member (bst-function-type bst-function)
+			  '(str-global-var int-global-var))
+		  (bst-function-lexical-p bst-function))
+	collect (bst-function-name bst-function)))
+
 
 #|
 
