@@ -2,12 +2,29 @@ An -*- outline -*- of the new features in CL-BibTeX
 
 * News in version 0.3.2 (not yet released)
 
+** BibTeX's output line breaking mechanism has been implemented.
+
+   Printing the .bbl file is now done with the new functions BBL-PRINT
+   and BBL-TERPRI, which break output lines after *BBL-MAX-PRINT-LINE*
+   characters (the default is 79).
+
+   Output line breaking can be disabled by setting or binding
+   *BBL-MAX-PRINT-LINE* to nil.  This can be desirable, for instance,
+   for formatting bibliographies that contain very long lines with
+   \url macros, because the comment characters (%) introduced by the
+   line breaking mechanism show up in the formatted URL.
+
 ** The compiler now deals with WHILE$ loops with complicated data flow.
 
    The predicate function can now pass values to the body function on
-   the stack.
+   the stack.  Such a WHILE$ loop gets converted to a simple LOOP form
+   with a RETURN call, rather than a DO form.
 
 ** The compiler now makes some variables constant.
+
+   Variables that get assigned a value exactly once (before any
+   reference to them) are turned into constants.  This makes the
+   data-flow in the resulting Lisp programs clearer.
 
 ** The compiler now tries to deal with slightly broken style files.
 
@@ -30,6 +47,10 @@ An -*- outline -*- of the new features in CL-BibTeX
     complained about an IF$ form with bad stack balance.
 
 *** The compiler now coerces booleans to integers in assignments.
+
+*** When an undefined macro is used in an entry, don't skip the whole entry.
+
+    Just emit a warning and use an empty string.
 
 * News in version 0.3.1
 

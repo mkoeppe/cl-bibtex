@@ -291,37 +291,110 @@
    (loop for style in *ctan-bibliography-styles*
 	 collect (merge-pathnames style *ctan-directory*))))
 
-(defvar *good-style-files* '())
+(defvar *test-bibliographies* '("/home/mkoeppe/p/cl-bibtex/examples/iba-bib"))
 
-(defvar *bad-style-files* '())
+;; Running the tests
 
 (defvar *temp-directory* "/home/mkoeppe/p/cl-bibtex/tmp/")
+
+(defmacro with-temporary-aux-file ((aux-file
+				    &key citations bibdata bibstyle)
+				   &body body)
+  `(progn (with-open-file (f ,aux-file :direction :output)
+	    (dolist (citation ,citations)
+	      (format f "\\citation{~A}~%" citation))
+	    (dolist (bibdatum ,bibdata)
+	      (format f "\\bibdata{~A}~%" bibdatum))
+	    (format f "\\bibstyle{~A}~%" ,bibstyle))
+    ,@body))
+	     
+(defun test-style-file (style-file-name)
+  (let ((conditions '()))
+    (handler-case 
+	(handler-bind ((condition
+			(lambda (condition)
+			  (push condition conditions))))
+	  (let ((lisp-file-name (make-pathname :type "lbst" 
+					       :directory *temp-directory*
+					       :defaults style-file-name)))
+	    (handler-case
+		(progn
+		  (format *error-output* "~&~%***** Compiling style ~A *****~%"
+			  style-file-name)
+		  (bibtex-compiler:compile-bst-file style-file-name lisp-file-name)
+		  (format *error-output* "~&----- Compiling Lisp program ~A~%"
+			  lisp-file-name)
+		  (multiple-value-bind (output-truename warnings-p failure-p)
+		      (compile-file lisp-file-name :print nil)
+		    (declare (ignore warnings-p))
+		    (unless failure-p
+		      (format *error-output* "~&----- Loading compiled Lisp program ~A~%"
+			      output-truename)
+		      (load output-truename)
+		      (format *error-output* "~&----- Running Lisp program ~A~%"
+			      output-truename)
+		      (let ((aux-file (make-pathname :type "aux"
+						     :directory *temp-directory*
+						     :defaults style-file-name))
+			    (cl-bbl-file (make-pathname :type "clbbl"
+							:directory *temp-directory*
+							:defaults style-file-name))
+			    (bbl-file (make-pathname :type "bbl"
+						     :directory *temp-directory*
+						     :defaults style-file-name))
+			    (diff-file (make-pathname :type "bbldiff"
+						      :directory *temp-directory*
+						      :defaults style-file-name)))
+			(with-temporary-aux-file
+			    (aux-file :citations '("*")
+				      :bibdata *test-bibliographies*
+				      :bibstyle (pathname-name style-file-name))
+			  (bibtex-compiler:bibtex (namestring aux-file))
+			  (rename-file bbl-file cl-bbl-file)
+			  (format *error-output* "~&----- Running the original BibTeX~%")
+			  (call-original-bibtex aux-file)
+			  (format *error-output* "~&----- Comparing results~%")
+			  (unless (zerop (call-diff bbl-file cl-bbl-file
+						    diff-file))
+			    (error "BBL files differ!"))))))))))
+      (error (condition)
+	(princ condition)
+	(terpri)))
+    (nreverse conditions)))
+
+(defvar *style-files/results* '())
 
 (defun test-remaining-style-files ()
   (dolist (style-file-name
 	    (set-difference *bib-style-files*
-			    (union *bad-style-files*
-				   *good-style-files*
-				   :test #'equal)
+			    (mapcar #'car *style-files/results*)
 			    :test #'equal))
-    (let ((lisp-file-name (make-pathname :type "lbst" 
-					 :directory *temp-directory*
-					 :defaults style-file-name)))
-      (format *error-output* "~&~%***** Compiling style ~A *****~%"
-	      style-file-name)
-      (handler-case
-	  (progn 
-	    (bibtex-compiler:compile-bst-file style-file-name lisp-file-name)
-	    (compile-file lisp-file-name :print nil))
-	(bibtex-compiler::bst-compiler-error (condition)
-	  (format *error-output*
-		  "Error: ~A~%" condition)
-	  (push style-file-name *bad-style-files*))
-	(error (condition)
-	  (format *error-output*
-		  "Error: ~A~%" condition)
-	  (push style-file-name *bad-style-files*))
-	(:no-error (&rest ignore)
-	  (declare (ignore ignore))
-	  (push style-file-name *good-style-files*)))))
-  (format t "Bad style files: ~{~&~A~}~%" *bad-style-files*))
+    (push (list style-file-name
+		(test-style-file style-file-name))
+	  *style-files/results*))
+  (show-results))
+
+(defun show-results ()
+  (format t "Style files:~%~:{~&~A~%~{~4T~W~%~}~}~%" *style-files/results*))
+
+(defvar *original-bibtex* "/usr/bin/bibtex.tetex")
+
+(defun call-original-bibtex (file-stem)
+  (let ((process
+	 (extensions:run-program *original-bibtex*
+				 (list (namestring
+					(make-pathname :type nil
+						       :defaults file-stem)))
+				 :output t)))
+    (prog1 (process-exit-code process)
+      (process-close process))))
+
+(defun call-diff (file-a file-b &optional (output t))
+  (let ((process 
+	 (extensions:run-program "/usr/bin/diff"
+				 `("-u" ,(namestring file-a) ,(namestring file-b))
+				 :output output
+				 :if-output-exists :supersede)))
+    (prog1 (process-exit-code process)
+      (process-close process))))
+				 

@@ -29,7 +29,8 @@
 	   #:bib-warn #:bib-warn* #:bib-error #:bib-fatal
 	   #:*err-count* #:*history*
 	   #:+spotless-history+ #:+warning-message+ #:+error-message+ #:+fatal-message+
-	   #:*bbl-output*))
+	   #:*bbl-output* #:*bbl-min-print-line* #:*bbl-max-print-line*
+	   #:bbl-print #:bbl-terpri #:with-bbl-output))
 
 (defpackage :bibtex-compiler
   (:use :common-lisp :bibtex-runtime)

@@ -5,9 +5,6 @@ To do:
   custom-bib system (merlin.mbs) may serve as a good datapoint.
 * Add a test suite, consisting of database files and BibTeX style files,
   for testing the correctness of cl-bibtex
-* Add BibTeX's output line breaking mechanism (but make it optional).
-* crossref doesn't seem to work with \cite{*} ?
-* When a macro can't be found, don't skip the whole entry.
 * There are too many tildes in some formatted names (C.~A.~J. Xyz)
 
 In the compiler:
