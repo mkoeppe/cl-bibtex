@@ -169,8 +169,9 @@
   (dolist (bst-name name-list)
     (check-for-already-defined-function bst-name)
     (let* ((lexical (member bst-name *lexicals* :test 'string-equal))
-	   (lisp-name (bst-name-to-lisp-name bst-name
-					     (if lexical :lexical :variable)))
+	   (lisp-name (and *bst-compiling*
+			   (bst-name-to-lisp-name bst-name
+						  (if lexical :lexical :variable))))
 	   (bst-function
 	    (register-bst-global-var bst-name lisp-name 'int-global-var
 				     '(integer) 0 *bst-functions*)))
@@ -264,8 +265,9 @@
   (dolist (bst-name name-list)
     (check-for-already-defined-function bst-name)
     (let* ((lexical (member bst-name *lexicals* :test 'string-equal))
-	   (lisp-name (bst-name-to-lisp-name bst-name
-					     (if lexical :lexical :variable)))
+	   (lisp-name (and *bst-compiling*
+			   (bst-name-to-lisp-name bst-name
+						  (if lexical :lexical :variable))))
 	   (bst-function
 	    (register-bst-global-var bst-name lisp-name 'str-global-var
 				     '(string) "" *bst-functions*)))
