@@ -91,6 +91,7 @@ the bib entries.")
 
 (defstruct mvform
   "A multiple-values-delivering form on the stack"
+  literal-p
   form					; a Lisp form OR
   literal				; a BST symbol or function body
   types
@@ -324,7 +325,7 @@ the actual type of the delivered value, and SIDE-EFFECTS."
   (when (null *form-stack*)
     (bst-compile-error "Empty form/literal stack"))
   (let ((mvform (pop *form-stack*)))
-    (unless (mvform-literal mvform)
+    (unless (mvform-literal-p mvform)
       (bst-compile-error "Expecting a literal on the stack, found a form ~S"
 			 mvform))
     (mvform-literal mvform)))
@@ -540,8 +541,8 @@ FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P, and FREE-VARIABLES."
 	(*borrowed-variables* ())
 	(*form-bindings* ()))
     (etypecase literal
-      (symbol (compile-funcall literal))
-      (cons (compile-body literal)))
+      (list (compile-body literal))
+      (symbol (compile-funcall literal)))
     (assert (or borrowing-allowed 
 		(null *borrowed-variables*)))
     (package-as-form)))
@@ -809,12 +810,14 @@ BODY, LOOP-VARS, LOOP-VAR-TYPES, INIT-TYPES and SIDE-EFFECTS."
 	   (push-mvform :form form :types '((integer))))
 	  ((stringp form)
 	   (push-mvform :form form :types '((string))))
+	  ((and (consp form) (eql (car form) 'quote)) ; quoted function
+	   (push-mvform :literal-p t
+			:literal (cadr form) :types '((symbol))))
+	  ((listp form)			; function body
+	   (push-mvform :literal-p t
+			:literal form :types '((body))))
 	  ((symbolp form)		;function call
 	   (compile-funcall form))
-	  ((and (consp form) (eql (car form) 'quote)) ; quoted function
-	   (push-mvform :literal (cadr form) :types '((symbol))))
-	  ((consp form)			; function body
-	   (push-mvform :literal form :types '((body))))
 	  (t (bst-compile-error "Illegal form in BST function body: ~S" form)))))))
 
 (defun bst-compile-defun (name function-definition)
