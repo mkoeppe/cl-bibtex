@@ -1,3 +1,39 @@
+2003-01-28  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
+
+	* bibtex-runtime.lisp (format-bibtex-name-component,
+	format-bibtex-name): Go for bug-for-bug compatibility with BibTeX
+	in the domain of tieing short name components.
+
+	(write-tex-group): New optional argument NO-TERMINATE-P; use it to
+	suppress unneeded whitespace after control words.  (This gets rid of
+	the extraneous whitespace after control words, which was introduced by
+	bibtex-string-upcase and bibtex-string-downcase.)
+
+	(bibtex-string-purify): Don't remove whitespace, turn it into a space
+	instead.  (This fixes problems with the sort order for some styles.)
+
+2003-01-16  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
+
+	* bibtex-compiler.lisp (bst-compiler-warning): Add report function.
+	(compile-bst-function): Resignal errors.
+
+	* bst-builtins.lisp (newline$, write$): Use BBL-TERPRI and BBL-PRINT.
+
+	* bibtex.lisp (bibtex): Use WITH-BBL-OUTPUT.
+
+	* bibtex-runtime.lisp (bib-warn): Print "Warning".
+	(read-bib-field-token): Call BIB-WARN, rather than BIB-ERROR, for
+	undefined macros.
+	(get-merged-bib-entry): New.
+	(cited-bib-entries): Resolve crossrefs also if all entries are cited.
+	Always merge crossrefed data into entry.
+
+	(*bbl-min-print-line*, *bbl-max-print-line*, *bbl-line-buffer*): New.
+	(bbl-print, bbl-terpri, bbl-flush, with-bbl-output): New.
+
+	(read-all-bib-files-and-compute-bib-entries): Fix the case of
+	unreadable database files.
+
 2003-01-03  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
 
 	* bibtex-compiler.lisp (coerce-form): New.

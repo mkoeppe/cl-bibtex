@@ -61,6 +61,8 @@ An -*- outline -*- of the user-visible changes in CL-BibTeX
     order was sometimes wrong, due to a bug in PURIFY$.  Changing the
     case of a string resulted in extraneous whitespace after control words.
 
+*** Crossrefs are also resolved when all entries are cited (\cite{*}).
+
 
 * News in version 0.3.1
 
