@@ -19,6 +19,8 @@ An -*- outline -*- of the new features in CL-BibTeX
    The BST->CL compiler now puts all the code of a BibTeX style into a
    separate package and emits a DEFINE-BIBTEX-STYLE form.
 
+** A shell script that calls CL-BibTeX has been added.
+
 ** Portability improvements.
 
    CL-BibTeX now works with CMUCL, SBCL 0.7.9, and CLISP 2.30.
