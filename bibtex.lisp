@@ -460,7 +460,8 @@ signal an error and don't return."
       (check-for-already-defined-function bst-name)
       (register-bst-global-var bst-name 'int-global-var '(integer) 0 *bst-functions*)
       (if *bst-compiling*
-	  (let ((lisp-name (bst-name-to-lisp-name bst-name 0)))))))
+	  (let ((lisp-name (bst-name-to-lisp-name bst-name)))
+	    (lisp-write `(defvar ,lisp-name 0)))))))
 
 (defun bst-iterate-command ()
   (unless *read-seen-p*
