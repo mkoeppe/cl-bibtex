@@ -39,7 +39,7 @@
     (when function
       (bst-execute function)))
   :compiled
-  (let ((type/fun-sym (intern "TYPE/FUN")))
+  (let ((type/fun-sym (bst-intern "TYPE/FUN")))
     `(let ((,type/fun-sym
 	    (assoc (gethash "ENTRY-TYPE" *bib-entry*)
 		   *bib-entry-type-functions* :test 'string-equal)))
