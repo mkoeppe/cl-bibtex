@@ -122,7 +122,10 @@ applied to the parallel elements in LISTS."
 ;;(map2 #'round '(5 6 7) '(2 2 2))
 
 (define-condition bst-compiler-warning ()
-  ((message :initarg :message :reader bst-compiler-error-message)))
+  ((message :initarg :message :reader bst-compiler-error-message))
+  (:report (lambda (condition stream)
+	     (princ (bst-compiler-error-message condition)
+		    stream))))  
 
 (define-condition bst-compiler-error (bst-compiler-warning) ())
 
@@ -1116,7 +1119,8 @@ STREAM as Lisp comments."
 		  (bst-function-defun-form bst-function)
 		  defun-form)))
       (bst-compiler-error (condition)
-	(declare (ignore condition))
+	;;(declare (ignore condition))
+	(signal condition) 
 	nil))))
 
 (defun compile-bst-fun (definition &key int-vars str-vars)
