@@ -8,10 +8,6 @@
 ;;   store arguments for later use).  Keep track whether a variable is
 ;;   accessed before it is assigned in any function; if not, we can make
 ;;   it lexical in *all* functions.  This requires a second compiler pass.
-;; * the preliminary lexical code fails at FORMAT.LAB.NAMES
-;;   (binding is missing for NAMESLEFT, NAMEPTR). 
-;; * avoid making a lexical binding for a formal argument; rather try to
-;;   rename the formal argument to get a useful name. 
 ;; * maybe name formal arguments "STRING1", "INT1", ..., depending on type?
 ;; * maybe replace dots with dashes in function names
 ;; * don't name the temporary variables occuring in while$ "ARGnn"
@@ -19,7 +15,7 @@
 ;;   { $duplicate + } is of type (INTEGER) -> (INTEGER), not T -> (INTEGER)
 ;; * be more strict when checking the type of a popped form
 ;; * If call.type$ occurs only once (in an ITERATE command),
-;;   use CASE instead of ASSOC/FUNCALL.
+;;   use CASE instead of ASSOC/FUNCALL?
 ;; * Handle the "tail-recursive" family of FORMAT.NAMES functions:
 ;;
 ;;FUNCTION {format.names}
@@ -52,6 +48,18 @@
 ;;  while$                          ;; WHILE BODY produces exactly one value
 ;;                                  ;; over all runs
 ;;}
+;;
+;;    One possible way to handle this would be to make the type system
+;;    more discriminating, so that integer intervals are handled.
+;;    Then one could unroll one iteration of the above while$ loop,
+;;    deciding statically about the outcome of the "nameptr #1 >"
+;;    test.  (Thanks to Utz-Uwe Haus for the suggestion.)
+;;
+;;    Or: When dynamically inside while$, don't throw an error if
+;;    signature of if$'s branches does not fit but fill up with nil
+;;    and emit a warning.
+;;
+;; * Try to compile the whole custom-bib system (merlin.mbs)?
 
 (in-package bibtex-compiler)
 
@@ -353,11 +361,10 @@ the actual type of the delivered value, and SIDE-EFFECTS."
 ;;; Packaging the computed data
 
 (defun set-union (&rest lists)
-  (if (null lists)
-      ()
-      (reduce (lambda (a b)
-		(union a b :test 'equalp))
-	      lists)))
+  (reduce (lambda (a b)
+	    (union a b :test 'equalp))
+	  lists
+	  :initial-value ()))
 
 (defun package-as-body ()
   "Build a Lisp body corresponding to the computation captured in
@@ -408,9 +415,14 @@ FREE-VARIABLES."
 	    (0 (make-let*)
 	       (setq body (cons (mvform-form (binding-mvform binding))
 				body)))
-	    (1 (push `(,(variable-name (car (binding-variables binding)))
-		       ,(mvform-form (binding-mvform binding)))
-		     let-bindings))
+	    (1 (let ((form (mvform-form (binding-mvform binding))))
+		 (push (if (equal '(values) form)
+			   ;; Lexical binding without useful values
+			   (variable-name (car (binding-variables binding)))
+			   ;; Lexical binding with useful values
+			   `(,(variable-name (car (binding-variables binding)))
+			     ,(mvform-form (binding-mvform binding))))
+		       let-bindings)))
 	    (t (make-let*)
 	       (setq body
 		     (list `(multiple-value-bind
@@ -450,7 +462,8 @@ RESULT-TYPES, SIDE-EFFECTS."
     (values `(,@(if name `(defun ,name) `(lambda))
 	      ,free-variables
 	      ,@body)
-	    argument-types result-types side-effects)))
+	    argument-types result-types
+	    (remove-variables-from-side-effects free-variables side-effects))))
 
 (defun show-state ()
   (format t "~&;; *form-bindings*: ~S~%;; *form-stack*: ~S~%;; *borrowed-variables*: ~S~%;; procedure: ~:W~%"
@@ -502,13 +515,12 @@ special forms by directly manipulating the current compiler data.")
 					 side-effects-2))))))
 
 (define-bst-special-form ":="
-    (let* ((var (pop-literal))
-	   (value-mvform (pop-single-value-form t :need-variable nil)))
+    (let ((var (pop-literal)))
       ;;(format t "var: ~S value: ~S~%" var value-form)
       (let* ((fun (get-bst-function var))
 	     (name (bst-function-name fun))
 	     assoc)
-	(labels ((compute-side-effects (assigned-thing)
+	(labels ((compute-side-effects (assigned-thing value-mvform)
 		   (max-side-effects
 		    (mvform-side-effects value-mvform)
 		    (make-instance 'side-effects
@@ -516,23 +528,32 @@ special forms by directly manipulating the current compiler data.")
 				   :unconditionally-assigned-variables (list assigned-thing)))))
 	  (cond
 	    ((setq assoc (assoc name *lexical-variables* :test 'string-equal))
-	     (let ((var-name (variable-name (cdr assoc))))
+	     (let ((var-name (variable-name (cdr assoc)))
+		   (value-mvform (pop-single-value-form t :need-variable nil)))
 	       (push-mvform :form `(setq ,var-name
 				    ,(mvform-form value-mvform))
 			    :types ()
-			    :side-effects (compute-side-effects var-name))))
+			    :side-effects (compute-side-effects var-name value-mvform))))
 	    ((member (bst-function-name fun) *lexicals* :test 'string-equal)
 	     (let ((var (make-variable :name (bst-name-to-lisp-name name)
-				       :type (car (bst-function-result-types fun)))))
-	       (push (make-binding :variables (list var)
-				   :mvform value-mvform) *form-bindings*)
+				       :type (car (bst-function-result-types fun))))
+		   (value-mvform (pop-single-value-form t :need-variable nil :when-empty nil)))
+	       (if (not value-mvform)
+		   ;; We have an assignment of a freshly popped formal
+		   ;; argument to a lexical variable.  So simply use
+		   ;; the lexical variable as the formal argument.
+		   (push var *borrowed-variables*)
+		   ;; Make a lexical binding.
+		   (push (make-binding :variables (list var)
+				       :mvform value-mvform) *form-bindings*))
 	       (push (cons name var) *lexical-variables*)))
 	    (t
 	     (let* ((setter-form-maker (bst-function-setter-form-maker fun))
+		    (value-mvform (pop-single-value-form t :need-variable nil))
 		    (setter-form (funcall setter-form-maker (mvform-form value-mvform))))
 	       (push-mvform
 		:form setter-form :types ()
-		:side-effects (compute-side-effects name)))))))))
+		:side-effects (compute-side-effects name value-mvform)))))))))
 
 (defun get-bst-function (name)
   (let ((function (gethash (string name) *bst-functions*)))
@@ -541,7 +562,7 @@ special forms by directly manipulating the current compiler data.")
     function))
 
 (defun bst-compile-literal (literal stack &key (borrowing-allowed t))
-  "Compile a BST function LITERAL , which is a symbol, designating a
+  "Compile a BST function LITERAL, which is a symbol, designating a
 BST function, or a list (a function body).  Return five values: a Lisp
 FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P, and FREE-VARIABLES."
   (let ((*form-stack* stack)
@@ -562,14 +583,32 @@ FORM, ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS-P, and FREE-VARIABLES."
       ;; the tested conditions to its liking.
 
       ;; First pass: compute the arity of both branches
-      (multiple-value-bind (else-form else-arg-types)
-	  (bst-compile-literal else-literal ())
-	(declare (ignore else-form))
+      (multiple-value-bind (else-form else-arg-types else-res-types else-side-effects)
+	  (let ((*lexicals* ())) ; don't introduce local lexical bindings
+	    (bst-compile-literal else-literal ()))
+	(declare (ignore else-form else-res-types))
 ;;(format t "~&;; else-form ~S is ~S --> ~S~%" else-literal else-arg-types else-res-types)
-	(multiple-value-bind (then-form then-arg-types)
-	    (bst-compile-literal then-literal ())
-	  (declare (ignore then-form))
+	(multiple-value-bind (then-form then-arg-types then-res-types then-side-effects)
+	    (let ((*lexicals* ())) ; don't introduce local lexical bindings
+	      (bst-compile-literal then-literal ()))
+	  (declare (ignore then-form then-res-types))
 ;;(format t "~&;; then-form ~S is ~S --> ~S~%" then-literal then-arg-types then-res-types)
+	  ;; Introduce lexical binding for the union of all
+	  ;; assigned-to variables in both branches.
+	  (let ((assigned-variables
+		 (set-union (side-effects-assigned-variables then-side-effects)
+			    (side-effects-assigned-variables else-side-effects))))
+	    (dolist (name assigned-variables)
+	      (when (and (stringp name)
+			 (member name *lexicals* :test 'string-equal)
+			 (not (assoc name *lexical-variables*)))
+		(let* ((fun (get-bst-function name))
+		       (var (make-variable :name (bst-name-to-lisp-name name)
+					   :type (car (bst-function-result-types fun)))))
+		  (push (cons name var) *lexical-variables*)
+		  (push (make-binding :variables (list var)
+				      :mvform (make-mvform :form `(values) :types nil))
+			*form-bindings*)))))
 	  ;; Now we know the arity of both branches.  We compute the
 	  ;; arg types and fill up the shorter arg list.
 	  (let ((arg-types ()))
