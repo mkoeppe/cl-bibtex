@@ -37,6 +37,7 @@
   argument-types
   result-types
   ;; For use in the BST compiler:
+  pop-form-args
   lisp-form-maker
   (side-effects null-side-effects)
   setter-form-maker
@@ -70,6 +71,7 @@
     (make-bst-function :name ,(string bst-name)
      :type 'built-in
      :argument-types ',(mapcar #'cadr arglist)
+     :pop-form-args ',(mapcar #'cddr arglist)
      :result-types ',result-types
      ,@(if interpreted
 	   `(:lisp-name 
