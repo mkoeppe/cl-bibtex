@@ -1,3 +1,4 @@
 *.fas
 *.x86f
 *.lib
+*.err

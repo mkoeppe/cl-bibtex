@@ -1,0 +1,31 @@
+;;; A BibTeX re-implementation in Common -*- Lisp -*- 
+;;; Copr. 2001, 2002 Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>
+;;; This is free software, licensed under GNU GPL (see file COPYING)
+
+(in-package :cl-user)
+
+(mk:defsystem "BIBTEX"
+  :source-pathname "/home/mkoeppe/p/cl-bibtex"
+  :source-extension "lisp"
+  :components ((:file "packages")
+	       (:file "kpathsea" :depends-on ("packages"))
+	       (:file "bibtex-runtime" :depends-on ("packages"))
+	       (:file "lisp-form-builder" :depends-on ("packages"))
+	       (:file "bst-functions" :depends-on ("packages" "lisp-form-builder"))
+	       (:file "interpreter" :depends-on ("bst-functions"))
+	       (:file "bibtex-compiler" :depends-on ("lisp-form-builder" "bst-functions"))
+	       (:file "bst-reader" :depends-on ("interpreter" "bst-functions"
+						"bibtex-compiler" "bibtex-runtime"))
+	       (:file "bst-builtins" :depends-on ("bst-functions" "interpreter"
+						  "bibtex-runtime"))
+	       (:file "bibtex" :depends-on ("bibtex-compiler" "bst-reader"))))
+
+#|
+(mk:operate-on-system "BIBTEX" 'compile :force t)
+(mk:operate-on-system "BIBTEX" 'load)
+|#
+
+
+;;; Local Variables:
+;;; eval: (put 'mk:defsystem 'lisp-indent-function 1)
+;;; End:

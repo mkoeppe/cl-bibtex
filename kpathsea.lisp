@@ -2,10 +2,6 @@
 ;;; Copr. 2002 Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>
 ;;; This is free software, licensed under GNU GPL (see file COPYING)
 
-(defpackage :kpathsea
-  (:use :common-lisp)
-  (:export "FIND-FILE"))
-
 (in-package :kpathsea)
 
 (defun find-file (name)

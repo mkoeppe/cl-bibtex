@@ -1,7 +1,7 @@
 Where to start
 ==============
 
-Compile and load all Lisp files.
+Compile and load all Lisp files, using bibtex.system.
 
 The function BIBTEX is like the bibtex program.  Pass the file name
 STEM; BIBTEX will read STEM.aux, interpret a BST file, and write
@@ -77,6 +77,16 @@ their types (BOOLEAN, INTEGER, STRING).
 
 * The body of a WHILE$ function must be neutral on the stack.  The
   predicate must deliver exactly one boolean value.
+
+
+Implementation dependencies
+===========================
+
+It does not run on SBCL because it does not like (COPY-READTABLE NIL).
+
+I noticed that CMUCL 3.0.8 18c+ does not like (PEEK-CHAR T STREAM NIL
+#\Space); it won't skip over whitespace when the EOF character is
+whitespace?
 
 
  -- Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>

@@ -6,8 +6,6 @@
   (:use :common-lisp)
   (:export "FIND-FILE"))
 
-(load "kpathsea" :if-source-newer :compile)
-
 (defpackage :bibtex-runtime
   (:use :common-lisp)
   (:export "*BIB-MACROS*" "*BIB-DATABASE*" "*BIB-ENTRIES*"
@@ -30,18 +28,7 @@
 	   #:*err-count* #:*history*
 	   #:+spotless-history+ #:+warning-message+ #:+error-message+ #:+fatal-message+
 	   #:*bbl-output*))
-  
-(load "bibtex-runtime" :if-source-newer :compile)
 
 (defpackage :bibtex-compiler
   (:use :common-lisp :bibtex-runtime)
   (:export "COMPILE-BST-FILE" "BIBTEX" "CL-BIBTEX"))
-
-(load "lisp-form-builder" :if-source-newer :compile)
-(load "bst-functions" :if-source-newer :compile)
-(load "interpreter" :if-source-newer :compile)
-(load "bibtex-compiler" :if-source-newer :compile)
-(load "bst-reader" :if-source-newer :compile)
-(load "bst-builtins" :if-source-newer :compile)
-(load "bibtex" :if-source-newer :compile)
-

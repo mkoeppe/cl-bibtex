@@ -53,6 +53,24 @@
 ;;                                  ;; over all runs
 ;;}
 
+(in-package bibtex-compiler)
+
+(defvar *bst-compiling* nil
+  "Non-nil if we are compiling a Common Lisp program from the BST
+program, rather than interpreting the BST program.")
+
+(defvar *lisp-stream* nil
+  "A stream where we write the Common Lisp program equivalent to the
+BST program.")
+
+(defvar *main-lisp-body* ()
+  "A list collecting the forms corresponding to EXECUTE, ITERATE,
+READ, REVERSE, and SORT commands in reverse order.")
+
+(defun lisp-write (arg)
+  (let ((*print-case* :downcase))
+    (pprint arg *lisp-stream*))
+  (terpri *lisp-stream*))
 
 ;; The type system.  NIL means no value fits, T means all values fit.
 ;; A list of symbols means values of all listed types fit.
@@ -384,8 +402,8 @@ FREE-VARIABLES."
 	  ;; variables outside their scope:
 	  (setq side-effects
 		(remove-variables-from-side-effects
-		 (max-side-effects side-effects (mvform-side-effects (binding-mvform binding)))
-		 (mapcar #'variable-name (binding-variables binding))))
+		 (mapcar #'variable-name (binding-variables binding))
+		 (max-side-effects side-effects (mvform-side-effects (binding-mvform binding)))))
 	  (case (length (binding-variables binding))
 	    (0 (make-let*)
 	       (setq body (cons (mvform-form (binding-mvform binding))
@@ -786,34 +804,6 @@ ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS."
 		"While compiling wizard-defined function `~S':~%~A~%"
 		bst-name (bst-compiler-error-message condition))))))
 
-(defun make-entry-type-function-alist ()
-  (loop for fun being each hash-value in *bst-functions*
-        when (and (member (bst-function-type fun)
-                          '(wizard-defined compiled-wiz-defined))
-                  (null (bst-function-argument-types fun))
-                  (null (bst-function-result-types fun)))
-	collect (cons (bst-function-name fun)
-		      (bst-function-lisp-name fun))))
-  
-;;;
-
-(defun compile-bst-file (bst-file lisp-file)
-  (let ((*bib-macros* (make-hash-table))
-	(*bst-compiling* t)
-	(*main-lisp-body* ())
-	(*bst-functions* (builtin-bst-functions)))
-    (with-open-file (*lisp-stream* lisp-file :direction :output)
-      (with-open-file (bst-stream bst-file)
-	(format *lisp-stream*
-		";;;; This is a -*- Common-Lisp -*- program, automatically translated~%;;;; from the BibTeX style file `~A'~%;;;; by the CL-BibTeX compiler ($Revision: 1.8 $).~%"
-		bst-file)
-	(get-bst-commands-and-process bst-stream)
-	(lisp-write `(defun ,(intern (string-upcase (pathname-name bst-file))) ()
-		      (let ((*bib-entry-type-functions*
-			     ',(make-entry-type-function-alist))
-			    bib-entries)
-			,@(reverse *main-lisp-body*))))))))
-
 (defun compile-bst-fun (definition &key int-vars str-vars)
   "A debugging aid."
   (let ((*bib-macros* (make-hash-table))
@@ -880,16 +870,6 @@ ARGUMENT-TYPES, RESULT-TYPES, SIDE-EFFECTS."
     (compile-bst-fun f :int-vars '(numnames nameptr namesleft) :str-vars '(s t))))
   
 		
-
-(progn
-  (let ((*lexicals* '("NUMNAMES" "NAMESLEFT" "NAMEPTR" "S" "T" "LEN" "MULTIRESULT")))
-    (compile-bst-file (kpathsea:find-file "amsalpha-xx.bst")
-		      "/tmp/compiled-bst.lisp"))
-  (load "/tmp/compiled-bst.lisp" :if-source-newer :compile)
-  (cl-bibtex "ibm-theory" 'amsalpha-xx))
-
-(compile-bst-file "test.bst"
-		  "/tmp/compiled-bst.lisp")
 
 |#
 
