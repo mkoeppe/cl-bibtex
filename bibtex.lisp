@@ -74,22 +74,29 @@
 			   :result-types result-types
 			   :side-effects-p nil)))
 
-(defmacro define-bst-primitive (bst-name arglist result-types &rest body)
-  (let ((declarations '()))
-    (do ()
-	((not (and (not (null body))
-		   (consp (car body))
-		   (eql 'declare (caar body))))
-	 (setq declarations (nreverse declarations)))
-      (push (car body) declarations)
-      (pop body))
-    `(register-bst-primitive ,(string bst-name) ',(mapcar #'cadr arglist) ',result-types
-			     #'(lambda ,(mapcar #'car arglist)
-				 ,@declarations
-				 ,@(if (symbolp bst-name)
-				       `((block ,bst-name 
-					   ,@body))
-				       body)))))
+(defmacro define-bst-primitive (bst-name arglist result-types
+				&key interpreted compiled
+				(side-effects-p nil))
+  `(setf (gethash ,(string bst-name) *builtin-bst-functions*)
+    (make-bst-function :name ,(string bst-name)
+     :type 'built-in
+     :argument-types ',(mapcar #'cadr arglist)
+     :result-types ',result-types
+     ,@(if interpreted
+	   `(:lisp-name 
+	     #'(lambda ,(mapcar #'car arglist)
+		 ,@(if (symbolp bst-name)
+		       `((block ,bst-name 
+			   ,interpreted))
+		       (list interpreted))))
+	   ())
+     ,@(if compiled
+	   `(:lisp-form-maker
+	     #'(lambda ,(mapcar #'car arglist)
+		 ,compiled))
+	   ())
+     :side-effects-p ,side-effects-p)))
+			       
 
 (register-bst-primitive ">" '((integer) (integer)) '((boolean)) '>)
 (register-bst-primitive "<" '((integer) (integer)) '((boolean)) '<)
@@ -98,9 +105,26 @@
 (register-bst-primitive "-" '((integer) (integer)) '((integer)) '-)
 
 (define-bst-primitive "*" ((a (string)) (b (string))) ((string))
-  (concatenate 'string a b))
+  :interpreted (concatenate 'string a b)
+  :compiled (labels ((concat-p (form)
+		       (and (consp form)
+			    (eql (car form) 'concatenate)
+			    (consp (cdr form))
+			    (equal (cadr form) '(quote string))))
+		     (concat-args (form)
+		       (cddr form))
+		     (string-forms (form)
+		       (if (concat-p form)
+			   (concat-args form)
+			   (list form))))
+	      ;; simplify nested * forms
+	      (let ((string-forms-1 (string-forms a))
+		    (string-forms-2 (string-forms b)))
+		`(concatenate 'string
+		  ,@string-forms-1 ,@string-forms-2))))
 
 (define-bst-primitive ":=" ((value t) (variable (symbol))) ()
+  :interpreted
   (let ((function (get-bst-function-of-type variable '(int-global-var str-global-var
 						       int-entry-var str-entry-var))))
     (case (bst-function-type function)
@@ -115,9 +139,9 @@
     (funcall (bst-function-setter function) value)))
 
 (register-bst-primitive "add.period$" '((string)) '((string)) 'add-period-unless-sentence-end)
-(register-bst-primitive "call.type$" '() '() 'call-type)
 
-(defun call-type ()
+(define-bst-primitive "call.type$" () ()
+  :interpreted 
   (let* ((type (gethash "entry-type" *bib-entry*))
 	 (function (or (get-bst-function-of-type type '(wiz-defined compiled-wiz-defined))
 		       (get-bst-function-of-type 'default.type '(wiz-defined compiled-wiz-defined)))))
@@ -125,115 +149,128 @@
       (bst-execute function))))
 
 (define-bst-primitive "change.case$" ((string (string)) (spec (string))) ((string))
+  :interpreted
   (cond
     ((string-equal spec "t") (bibtex-string-titledowncase string))
     ((string-equal spec "l") (bibtex-string-downcase string))
     ((string-equal spec "u") (bibtex-string-upcase string))
     (t (bib-warn "~S is an illegal case-conversion string" spec)
-       string)))  
+       string))
+  :compiled
+  (if (stringp spec)			; specifier known at compile time
+      (cond 
+	((string-equal spec "t")
+	 `(bibtex-string-titledowncase ,string))
+	((string-equal spec "l")
+	 `(bibtex-string-downcase string))
+	((string-equal spec "u")
+	 `(bibtex-string-upcase string))
+	(t (bib-warn "~S is an illegal case-conversion string" spec)
+	   string))
+      `(cond
+	((string-equal ,spec "t") (bibtex-string-titledowncase string))
+	((string-equal ,spec "l") (bibtex-string-downcase string))
+	((string-equal ,spec "u") (bibtex-string-upcase string))
+	(t (bib-warn "~S is an illegal case-conversion string" ,spec)
+	 string))))
 
 (define-bst-primitive "chr.to.int$" ((s (string))) ((integer))
-  (cond
-    ((= (length s) 1)
-     (char-code (char s 0)))
-    (t
-     (bib-warn "String ~S is not a one-character string")
-     0)))
+  :interpreted (cond
+		 ((= (length s) 1)
+		  (char-code (char s 0)))
+		 (t
+		  (bib-warn "String ~S is not a one-character string")
+		  0))
+  :compiled `(let ((str ,s))
+	      (if (= (length str) 1)
+		  (char-code (char str 0)))
+		  0))
 
 (define-bst-primitive "cite$" () ((string))
-  (gethash "key" *bib-entry* ""))
+  :interpreted (gethash "key" *bib-entry* "")
+  :compiled `(gethash "key" *bib-entry* ""))
 
 (define-bst-primitive "duplicate$" ((object t)) (t t)
-  (values object object))
+  :interpreted (values object object))
 
 (register-bst-primitive "empty$" '((string missing)) '((boolean)) 'empty-field-p)
 
-(define-bst-primitive format.name$ ((names (string)) (index (integer)) (format (string)))
+(define-bst-primitive "format.name$" ((names (string)) (index (integer)) (format (string)))
     ((string))
-  (unless (> index 0)
-    (bib-warn "Bad index: ~A" index)
-    (return-from format.name$ ""))
-  (let ((bibtex-names (parse-bibtex-name-list names)))
-    (when (> index (length bibtex-names))
-      (if (zerop (length bibtex-names))
-	  (bib-warn "There is no name in ~S" names)
-	  (bib-warn "There aren't ~A names in ~S" index names))
-      (return-from format.name$ ""))
-    (format-bibtex-name nil format (elt bibtex-names (- index 1)))))
+  :interpreted (format-nth-bibtex-name nil format names index)
+  :compiled `(format-nth-bibtex-name nil ,format ,names ,index)
+  ;; FIXME: This changes the arg order!
+  )
 
 (define-bst-primitive "if$" ((pred (boolean)) (then (symbol body)) (else (symbol body))) ()
+  :interpreted
   (bst-execute-stack-literal
    (if pred
        then
        else)))      
 
-(define-bst-primitive int.to.chr$ ((code (integer))) ((string))
+(define-bst-primitive "int.to.chr$" ((code (integer))) ((string))
+  :interpreted
   (let ((char (code-char code)))
-    (unless char
-      (bib-warn "~A isn't a valid character code" code)
-      (return-from int.to.chr$ ""))
-    (string char)))
+    (cond
+      (char (string char))
+      (t (bib-warn "~A isn't a valid character code" code)
+	 "")))
+  :compiled
+  `(code-char ,code))  
 
 (define-bst-primitive "int.to.str$" ((n (integer))) ((string))
-  (format nil "~A" n))
+  :interpreted (format nil "~A" n)
+  :compiled `(format nil "~A" ,n))
 
 (define-bst-primitive "missing$" ((object (string missing))) ((boolean))
-  (null object))
+  :interpreted (null object)
+  :compiled `(null ,object))
   
 (define-bst-primitive "newline$" () ()
-  (terpri *bbl-output*))
+  :interpreted (terpri *bbl-output*)
+  :compiled `(terpri *bbl-output*))
 
-(define-bst-primitive "num.names$" ((names (string))) ((integer))
-  (length (parse-bibtex-name-list names)))
+(register-bst-primitive "num.names$" '((string)) '((integer)) 'num-bibtex-names)
 
 (define-bst-primitive "pop$" ((object t)) ()
-  (declare (ignore object))
-  nil)
+  :interpreted (progn nil))
 
 (define-bst-primitive "preamble$" () ((string))
-  *bib-preamble*)
+  :interpreted *bib-preamble*
+  :compiled `*bib-preamble*)
 
 (register-bst-primitive "purify$" '((string)) '((string)) 'bibtex-string-purify)
 
 (define-bst-primitive "quote$" () ((string))
-  "\"")
+  :interpreted "\""
+  :compiled "\"")
 
 (register-bst-primitive "skip$" '() '() 'values)
 
 (define-bst-primitive "stack$" () ()
-  nil)
+  :interpreted nil)
 
-(define-bst-primitive "substring$" ((s (string)) (start (integer)) (count (integer)))
-    ((string))
-  (cond
-    ((or (> start (length s))
-	 (< start (- (length s)))
-	 (<= count 0))
-     "")
-    ((>= start 0)			; take count chars from start
-     (subseq s (max 0 (- start 1)) (min (length s) (+ (- start 1) count))))
-    (t
-     (subseq s (max 0 (- (length s) (- start) (- count 1)))
-	     (+ (length s) start 1)))))
-
-#|(funcall (bst-function-lisp-name (gethash 'substring$ *builtin-bst-functions*))
-	 8 -1 "ABCEFDGHJ")|#
+(register-bst-primitive "substring$" '((string) (integer) (integer))
+			'((string)) 'bibtex-substring)
 
 (define-bst-primitive "swap$" ((a t) (b t)) (t t)
-  (values b a))
+  :interpreted (values b a))
 
 (register-bst-primitive "text.length$" '((string)) '((integer)) 'length) ; FIXME: count text chars only
 (register-bst-primitive "text.prefix$" '((string) (integer)) '((string)) 'bibtex-string-prefix)
 
 (define-bst-primitive "top$" ((object t)) ()
-  (format *error-output* "~A~%" object))
+  :interpreted (format *error-output* "~A~%" object))
 
 (define-bst-primitive "type$" () ((string))
-  (string-downcase (gethash "entry-type" *bib-entry* "")))
+  :interpreted (string-downcase (gethash "entry-type" *bib-entry* ""))
+  :compiled `(string-downcase (gethash "entry-type" *bib-entry* "")))
 
 (register-bst-primitive "warning$" '((string)) 'nil 'bib-warn)
 
 (define-bst-primitive "while$" ((predicate (symbol body)) (body (symbol body))) ()
+  :interpreted
   (do ()
       ((not (bst-execute-stack-literal/pop predicate '(boolean))))
     (bst-execute-stack-literal body)))
@@ -241,7 +278,9 @@
 (register-bst-primitive "width$" '((string)) '((integer)) 'length) ; fixme
 
 (define-bst-primitive "write$" ((s (string))) ()
-  (princ s *bbl-output*))
+  :interpreted (princ s *bbl-output*)
+  :compiled `(princ ,s *bbl-output*)
+  :side-effects-p t)
 
 (defun register-bst-entry (entry func-type type default-value hash-table)
   (setq entry (string entry))
@@ -273,9 +312,10 @@
 					      (gethash variable hash-table))
 					     value))
 			   :lisp-form-maker #'(lambda ()
-						`variable)
+						(intern variable))
 			   :setter-form-maker #'(lambda (value-form)
-						  `(setq ,variable ,value-form))
+						  `(setq ,(intern variable)
+						    ,value-form))
 			   :type func-type
 			   :argument-types '()
 			   :result-types (list type)
