@@ -1,11 +1,11 @@
 To do:
 
 * Better error reporting
+* Track line numbers for error messages?  (Use Gray streams?)
 * Factor out useful subroutines from the existing bib styles; the
   custom-bib system (merlin.mbs) may serve as a good datapoint.
 * Add a test suite, consisting of database files and BibTeX style files,
   for testing the correctness of cl-bibtex
-* There are too many tildes in some formatted names (C.~A.~J. Xyz)
 
 In the compiler:
 

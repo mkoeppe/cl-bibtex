@@ -300,14 +300,15 @@
 (defmacro with-temporary-aux-file ((aux-file
 				    &key citations bibdata bibstyle)
 				   &body body)
-  `(progn (with-open-file (f ,aux-file :direction :output)
+  `(progn (with-open-file (f ,aux-file :direction :output
+			   :if-exists :supersede)
 	    (dolist (citation ,citations)
 	      (format f "\\citation{~A}~%" citation))
 	    (dolist (bibdatum ,bibdata)
 	      (format f "\\bibdata{~A}~%" bibdatum))
 	    (format f "\\bibstyle{~A}~%" ,bibstyle))
     ,@body))
-	     
+
 (defun test-style-file (style-file-name)
   (let ((conditions '()))
     (handler-case 
@@ -348,15 +349,19 @@
 			(with-temporary-aux-file
 			    (aux-file :citations '("*")
 				      :bibdata *test-bibliographies*
-				      :bibstyle (pathname-name style-file-name))
+				      :bibstyle (namestring
+						 (make-pathname :type nil
+								:defaults style-file-name)))
 			  (bibtex-compiler:bibtex (namestring aux-file))
 			  (rename-file bbl-file cl-bbl-file)
 			  (format *error-output* "~&----- Running the original BibTeX~%")
-			  (call-original-bibtex aux-file)
+			  (unless (zerop (call-original-bibtex aux-file))
+			    (error "Original BibTeX failed."))
 			  (format *error-output* "~&----- Comparing results~%")
-			  (unless (zerop (call-diff bbl-file cl-bbl-file
-						    diff-file))
-			    (error "BBL files differ!"))))))))))
+			  (if (zerop (call-diff bbl-file cl-bbl-file diff-file))
+			      (format *error-output* "Identical.~%")
+			      (error "BBL files differ, diff in ~A"
+				     diff-file))))))))))
       (error (condition)
 	(princ condition)
 	(terpri)))
@@ -373,6 +378,9 @@
 		(test-style-file style-file-name))
 	  *style-files/results*))
   (show-results))
+
+(defun clear-results ()
+  (setq *style-files/results* '()))
 
 (defun show-results ()
   (format t "Style files:~%~:{~&~A~%~{~4T~W~%~}~}~%" *style-files/results*))

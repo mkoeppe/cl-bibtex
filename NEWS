@@ -1,4 +1,4 @@
-An -*- outline -*- of the new features in CL-BibTeX
+An -*- outline -*- of the user-visible changes in CL-BibTeX
 
 * News in version 0.3.2 (not yet released)
 
@@ -12,7 +12,10 @@ An -*- outline -*- of the new features in CL-BibTeX
    *BBL-MAX-PRINT-LINE* to nil.  This can be desirable, for instance,
    for formatting bibliographies that contain very long lines with
    \url macros, because the comment characters (%) introduced by the
-   line breaking mechanism show up in the formatted URL.
+   line breaking mechanism show up in the formatted URL.  (However,
+   the real solution for the problem with \url macros is to simply
+   break the URLs in the bibliography file using whitespace, because
+   url.sty ignores whitespace when typesetting the URL.)
 
 ** The compiler now deals with WHILE$ loops with complicated data flow.
 
@@ -52,9 +55,17 @@ An -*- outline -*- of the new features in CL-BibTeX
 
     Just emit a warning and use an empty string.
 
+*** Some minor differences with BibTeX's output have been corrected.
+
+    There were too many tildes in some formatted names.  The sort
+    order was sometimes wrong, due to a bug in PURIFY$.  Changing the
+    case of a string resulted in extraneous whitespace after control words.
+
+
 * News in version 0.3.1
 
   This is a bug-fix release.
+
 
 * News in version 0.3
 
