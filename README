@@ -2,13 +2,61 @@ A BibTeX system in Common Lisp
 ******************************
 
 This project provides a replacement for the BibTeX program, written in
-Common Lisp. The aim is to enable the user to format bibliographic
+Common Lisp.  The aim is to enable the user to format bibliographic
 entries using Common Lisp programs, rather than using the stack
-language of BibTeX style files.
+language of BibTeX style files.  It is released under the GNU General
+Public License (see the file COPYING).
 
 The project pages are at 
 
     http://www.freesoftware.fsf.org/cl-bibtex/
+
+There is a mailing list `cl-bibtex-users@mail.freesoftware.fsf.org'.  
+You can subscribe to the list at 
+
+    http://mail.freesoftware.fsf.org/mailman/listinfo/cl-bibtex-users
+
+
+Reasons
+=======
+
+A powerful tool is needed for dealing with citations in scientific
+documents.  BibTeX is good for formatting bibliographies, but
+customizing the format is a pain because it requires writing/changing
+a program in BAFLL (BibTeX Anonymous Forth-Like Language -- 
+Drew McDermott in comp.lang.lisp), which looks like this:
+
+FUNCTION {tie.or.space.connect}
+{ duplicate$ text.length$ #3 <
+    { "~" }
+    { " " }
+  if$
+  swap$ * *
+}
+
+Other citation-related processing like producing a list of authors and
+citation indices is usually done with a combination of BibTeX, TeX
+macros, and ad-hoc scripting with Perl or AWK.
+
+The new cl-bibtex system aims to replace all this.
+
+
+Status
+======
+
+Alpha.  The system already has:
+
+ * A reader for BibTeX style files (.bst),
+ * a reader for bibliography databases (.bib),
+ * a reader for .aux files,
+ * an implementation of BibTeX's built-in functions (like for parsing and
+   formatting names, etc.)
+ * an interpreter for the stack language of BibTeX style files,
+ * a compiler that transforms BibTeX style files into comprehensible
+   Common Lisp programs (using type analysis)
+
+Missing so far:  see the TODO file
+
 
 Where to start
 ==============

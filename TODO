@@ -4,6 +4,9 @@ To do:
   error reporting)
 * Factor out useful subroutines from the existing bib styles; the
   custom-bib system (merlin.mbs) may serve as a good datapoint.
+* The crossref feature
+* Add a test suite, consisting of database files and BibTeX style files,
+  for testing the correctness of cl-bibtex
 
 In the compiler:
 
