@@ -6,19 +6,10 @@ To do:
 * Add a test suite, consisting of database files and BibTeX style files,
   for testing the correctness of cl-bibtex
 * Add BibTeX's output line breaking mechanism (but make it optional).
-* From Drew McDermott: 
-  In bibtex.system, I changed references to your directory to my
-  directories; there really should be some global vars to handle this.
-  Also, I added a line  :binary-pathname "..."
-  so the binary directory can differ from the source dir.
 
 In the compiler:
 
-* macros
-* most variables are in fact lexical variables (some, in fact, only
-  store arguments for later use).  Keep track whether a variable is
-  accessed before it is assigned in any function; if not, we can make
-  it lexical in *all* functions.  This requires a second compiler pass.
+* detect constant variables
 * maybe name formal arguments "STRING1", "INT1", ..., depending on type?
 * don't name the temporary variables occuring in while$ "ARGnn"
 * propagate types when they get more specific:

@@ -88,13 +88,6 @@ COMPILE-BST-FILE:
 	(bibtex-compiler:compile-bst-file (kpathsea:find-file "amsalpha.bst")
 					  "amsalpha.lbst")
 
-Slightly better results can be obtained by:
-
-        (let ((bibtex-compiler::*lexicals* 
-	       '("NUMNAMES" "NAMESLEFT" "NAMEPTR" "S" "T" "LEN" "MULTIRESULT")))
-          (bibtex-compiler:compile-bst-file (kpathsea:find-file "amsalpha.bst")
-					    "amsalpha.lbst"))
-
 The resulting Lisp file is a readable Common Lisp version of the BST
 file, which can be run on the AUX file to produce a BBL file, without
 using the BST interpreter:

@@ -1,3 +1,39 @@
+2002-12-15  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
+
+	Version 0.3
+	
+	* bst-builtins.lisp (CALL.TYPE$): Use bst-intern rather than intern.
+
+	* bibtex.system (*bibtex-source-pathname*, *bibtex-binary-pathname*):
+	New variables.
+	(mk:defsystem "BIBTEX"): Use them here.
+
+	* bibtex.lisp (*bibtex-pprint-dispatch*): Moved here.
+	(compile-bst-file): Make two compiler passes.
+	(bibtex): Make *bib-macros* an equalp hash.
+
+	* bibtex-compiler.lisp (*lisp-stream*, lisp-write): Removed.
+	(*bibtex-pprint-dispatch*): Moved to bibtex.lisp.
+	(max-side-effectss, remove-variables-from-side-effects,
+	package-as-body, IF$, compile-funcall): Handle the new side
+	effects "variables-used-before-assigned" and
+	"unconditionally-assigned-variables".
+	(bst-gentemp): Use bst-intern rather than intern.
+	(print-bst-function-info): New.
+	(compile-bst-function): Changed interface; modify the passed
+	bst-function structure.
+	(make-some-variables-lexical): New.
+
+	* bst-functions.lisp (side-effects, bst-function): New fields.
+	(*bst-package*): New variable.
+	(bst-intern): New function.
+	(bst-name-to-lisp-name): Use bst-intern rather than intern.
+
+	* bst-reader.lisp (get-bst-commands-and-process, INTEGERS,
+	STRINGS): Store into *bst-definition-sequence*, rather than
+	writing to *lisp-stream*.
+	(FUNCTION): Changed call to compile-bst-function.
+
 2002-12-11  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
 
 	* bibtex-runtime.lisp (bibtex-string-upcase): Really upcase (not

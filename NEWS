@@ -1,5 +1,31 @@
 An -*- outline -*- of the new features in CL-BibTeX
 
+* News in version 0.3
+
+** The compiler now supports BibTeX macros (named strings).
+
+** The compiler now makes some variables lexical (rather than special).
+
+   The compiler keeps track whether a variable is accessed before it
+   is assigned in any function.  If not, we make the variable lexical
+   in all functions (in a second compiler pass).
+
+   This makes the translated style file more readable because the data
+   flow is much clearer, and many temporary assignments can be dropped.
+
+** The compiler is more careful with respect to the package system.
+   
+   Symbols that were generated from BST function names could clash
+   with symbols naming built-in Common Lisp functions.  The compiler
+   now takes care to shadow all generated symbols.
+
+** Bug fixes:
+
+*** The interpreter and the compiler now handle empty BST function blocks { }. 
+
+*** A capitalization bug has been fixed.
+
+
 * News in version 0.2
 
 ** Nested .aux files are now handled.
@@ -8,7 +34,7 @@ An -*- outline -*- of the new features in CL-BibTeX
 
 ** A model for Lisp BibTeX styles has been implemented.
 
-   A Lisp BibTeX style is a Lisp program in a file with type "lbst".  
+   A Lisp BibTeX style is a Lisp program in a file with type "lbst".
    The Lisp program is supposed to define a BibTeX style using the
    macro DEFINE-BIBTEX-STYLE or the function REGISTER-BIBTEX-STYLE.
 
