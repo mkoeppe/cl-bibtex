@@ -146,7 +146,7 @@ right delimiter."
 	    definition)))))))
 
 (defconstant +bib-whitespace-character-list+
-  '(#\Newline #\Space #\Linefeed #\Return #\Page))
+  '(#\Newline #\Space #\Linefeed #\Return #\Page #\Tab))
 
 (defconstant +bib-sep-character-list+
   '(#\~ #\-))
