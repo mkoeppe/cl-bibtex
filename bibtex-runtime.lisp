@@ -254,6 +254,25 @@ non-nil, remove any leading or trailing whitespace."
 	      (t (bib-error "Expected `,' or `~A'" close-char)))))
       (setf (gethash key *bib-database*) entry))))
 
+;;; Writing BibTeX databases
+
+(defun write-bib-entry (entry &optional (stream *standard-output*))
+  (format stream "~&@~A{~A"
+	  (gethash "entry-type" entry)
+	  (gethash "key" entry))
+  (loop for field being each hash-key in entry
+	and value being each hash-value in entry
+	unless (or (string-equal field "entry-type")
+		   (string-equal field "key"))
+	do (format stream ",~%  ~A = {~A}" field value))
+  (format stream "~%}~%"))
+
+#|
+(write-bib-entry (gethash "Corput" *bib-database*))
+(loop for entry being each hash-value in *bib-database* do
+      (write-bib-entry entry))
+|#
+
 ;;; Computing the cited entries
 
 (defun cited-bib-entries (cite-keys &key
@@ -690,12 +709,12 @@ found in *AUX-FILE-COMMANDS*, call the associated function."
 	    (read-line *aux-stream* nil ""))))))
 	   
 (defun read-aux-file-recursively (name)
-  (let* ((full-name (kpathsea:find-file name))
-	 (stream (and full-name
-		      (open full-name :if-does-not-exist nil))))
+  (let ((full-name (kpathsea:find-file name)))
     (unless full-name
-      (bib-fatal "I couldn't open auxiliary file: ~S" name))
-    (let ((*aux-stream* stream))
+      (bib-fatal "I couldn't find auxiliary file: ~S" name))
+    (with-open-file (*aux-stream* full-name :if-does-not-exist nil)
+      (unless *aux-stream*
+	(bib-fatal "I couldn't open auxiliary file: ~S" name))
       (loop as char = (peek-char nil *aux-stream* nil nil)
 	    while char
 	    do (cond
