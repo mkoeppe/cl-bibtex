@@ -21,4 +21,12 @@ In the compiler:
   { $duplicate + } is of type (INTEGER) -> (INTEGER), not T -> (INTEGER)
 * be more strict when checking the type of a popped form
 * Try to compile the whole custom-bib system (merlin.mbs)?
+  - custom-bib is latexdoc-conditionalized BST code
+  - Options can be modeled such that every option group corresponds to
+    a special variable
+  - In most cases, the conditionalization fits into the BST structure,
+    so simple CASE or COND constructs can be emitted
+  - Problematic cases (conditionalization does not fit into the BST
+    structure):  FIN.ENTRY, 
+  
 
