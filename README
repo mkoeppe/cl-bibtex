@@ -4,17 +4,21 @@ A BibTeX system in Common Lisp
 This project provides a replacement for the BibTeX program, written in
 Common Lisp.  The aim is to enable the user to format bibliographic
 entries using Common Lisp programs, rather than using the stack
-language of BibTeX style files.  It is released under the GNU General
-Public License (see the file COPYING).
+language of BibTeX style files.  It is released under the terms of
+version 2.1 of the GNU Lesser General Public License as published 
+by the Free Software Foundation or any later version (see file COPYING,)
+as clarified by the preamble found (in COPYING-preamble.txt.)
+
+(Note: run-lisp is included from CLOCC and has its own license.)
 
 The project pages are at 
 
-    http://www.freesoftware.fsf.org/cl-bibtex/
+    http://www.nongnu.org/cl-bibtex/
 
-There is a mailing list `cl-bibtex-users@mail.freesoftware.fsf.org'.  
+There is a mailing list `cl-bibtex-users@nongnu.org'.
 You can subscribe to the list at 
 
-    http://mail.freesoftware.fsf.org/mailman/listinfo/cl-bibtex-users
+    http://lists.nongnu.org/mailman/listinfo/cl-bibtex-users
 
 
 Reasons
