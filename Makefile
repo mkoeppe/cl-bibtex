@@ -1,7 +1,8 @@
-VERSION=0.4
+VERSION=1.0
 
-SOURCES=Makefile AUTHORS COPYING ChangeLog README TODO NEWS \
-	bibtex.system \
+SOURCES=Makefile AUTHORS COPYING COPYING-preamble.txt \
+	ChangeLog README TODO NEWS \
+	bibtex.asd bibtex.system \
 	bibtex-compiler.lisp bibtex-runtime.lisp bibtex.lisp \
 	bst-builtins.lisp bst-functions.lisp bst-reader.lisp \
 	interpreter.lisp kpathsea.lisp lisp-form-builder.lisp \
