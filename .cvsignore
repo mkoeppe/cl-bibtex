@@ -1,6 +1,8 @@
+*.err
 *.fas
-*.x86f
+*.fasl
 *.lib
 *.sparcf
-*.err
-*.fasl
+*.x86f
+build-stamp
+configure-stamp

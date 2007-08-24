@@ -1,3 +1,42 @@
+2007-08-24  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
+
+	Version 1.0
+
+	Released under the GNU LGPL 2.1 or later with Franz-style Lisp
+	clarification.
+
+	* README: Declare CL-BibTeX stable.
+	
+2007-08-24  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
+
+	* packages.lisp (packages bibtex-runtime, bibtex-compiler): Always
+	shadow #:variable, as it is a standard CL symbol.
+
+	* bibtex.asd: Hans Halvorson approved same license conditions for
+	asd file - updating copyright.  Thanks to Cliff Yapp for updating
+	the file.
+
+	* bibtex.system: Get source path from *load-truename*.
+
+2007-08-22  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
+
+	Re-release CL-BibTeX under the GNU LGPL 2.1 or later
+	with Franz-style Lisp clarification.
+	
+	Thanks to Cliff Yapp for updating the files.
+	
+	* COPYING-preamble.txt: Add preamble file.
+
+	* COPYING, bibtex-compiler.lisp, bibtex-program.lisp,
+	bibtex-runtime.lisp, bibtex.lisp, bibtex.system,
+	bst-builtins.lisp, bst-functions.lisp, bst-reader.lisp,
+	debian/copyright, interpreter.lisp, kpathsea.lisp,
+	lisp-form-builder.lisp, packages.lisp: Change license to LGPLv2.1
+	or later with Lisp clarification.
+
+	* README: Change license to LGPLv2.1 or later with Lisp
+	clarification, update with current URLs.
+
 2006-12-29  Hans Halvorson  <hhalvors@princeton.edu>
 
 	* bibtex.asd: New file.
