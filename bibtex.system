@@ -11,7 +11,10 @@
 
 (in-package :cl-user)
 
-(defvar *bibtex-source-pathname* "cl-library:bibtex")
+(defparameter *bibtex-source-pathname*
+  (make-pathname :name nil :type nil :version nil
+                 :defaults (parse-namestring *load-truename*)))
+
 (defvar *bibtex-binary-pathname* nil)
 
 (mk:defsystem "BIBTEX"
