@@ -1,8 +1,15 @@
 ;;;; -*- Mode: Lisp; Syntax: ANSI-Common-Lisp; Base: 10 -*-
-;;; A BibTeX re-implementation in Common Lisp
-;;; Author: Matthias Koeppe
-;;; this bibtex asd file by Hans Halvorson <hhalvors@princeton.edu>
-;;; This is free software, licensed under GPL v2 (see file COPYING)
+;; A BibTeX re-implementation in Common Lisp
+;; Author: Matthias Koeppe
+;; this bibtex asd file by Hans Halvorson <hhalvors@princeton.edu>
+;;
+;; This code is free software; you can redistribute it and/or
+;; modify it under the terms of version 2.1 of the GNU Lesser 
+;; General Public License as published by the Free Software 
+;; Foundation or any later version, as clarified by the preamble 
+;; found in COPYING-preamble.txt. This preamble is in the style
+;; of the Franz Inc. preamble at http://opensource.franz.com/preamble.html
+;; with names and copyright holders altered accordingly.
 
 (defpackage :bibtex-system (:use :cl :asdf))
 (in-package :bibtex-system)
