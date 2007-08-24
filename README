@@ -1,13 +1,15 @@
 A BibTeX system in Common Lisp
 ******************************
 
-This project provides a replacement for the BibTeX program, written in
+CL-BibTeX is a replacement for the BibTeX program, written in
 Common Lisp.  The aim is to enable the user to format bibliographic
 entries using Common Lisp programs, rather than using the stack
-language of BibTeX style files.  It is released under the terms of
-version 2.1 of the GNU Lesser General Public License as published 
-by the Free Software Foundation or any later version (see file COPYING,)
-as clarified by the preamble found (in COPYING-preamble.txt.)
+language of BibTeX style files.  
+
+It is released under the terms of version 2.1 of the GNU Lesser
+General Public License as published by the Free Software Foundation
+(see file COPYING) or any later version, as clarified by the preamble
+found in COPYING-preamble.txt.
 
 (Note: run-lisp is included from CLOCC and has its own license.)
 
@@ -42,30 +44,43 @@ Other citation-related processing like producing a list of authors and
 citation indices is usually done with a combination of BibTeX, TeX
 macros, and ad-hoc scripting with Perl or AWK.
 
-The new cl-bibtex system aims to replace all this.
+The new CL-BibTeX system aims to replace all this.
 
 
 Status
 ======
 
-Alpha.  The system already has:
+CL-BibTeX is a compatible and stable re-implementation of the BibTeX
+program, which was written by Oren Patashnik in the WEB language.
+
+It consists of the following components:
 
  * A reader for BibTeX style files (.bst),
  * a reader and a writer for bibliography databases (.bib),
  * a reader for .aux files,
  * an implementation of BibTeX's built-in functions (like for parsing and
-   formatting names, etc.)
- * an interpreter for the stack language of BibTeX style files,
- * a compiler that transforms BibTeX style files into comprehensible
-   Common Lisp programs (using type analysis)
+   formatting names, etc.),
+ * an interpreter for the stack language of BibTeX style files.
 
-Missing so far:  see the TODO file
+Thus CL-BibTeX allows to both use existing BibTeX style files,
+and to write new BibTeX styles in Common Lisp.  
+
+In addition to this, CL-BibTeX contains:
+
+ * A compiler that transforms BibTeX style files into comprehensible
+   Common Lisp programs (using type analysis).
+
+   The resulting Common Lisp programs can serve as a starting point
+   for the customization of the style.
+
+Future directions of CL-BibTeX's development can be found in the TODO
+file.
 
 
 Where to start
 ==============
 
-Compile and load all Lisp files, using bibtex.system.
+Compile and load all Lisp files, using ASDF or bibtex.system.
 
 The function BIBTEX is like the bibtex program.  Pass the file name
 STEM; BIBTEX will read STEM.aux, interpret a BST file, and write
