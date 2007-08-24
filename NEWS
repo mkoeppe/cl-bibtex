@@ -1,5 +1,14 @@
 An -*- outline -*- of the user-visible changes in CL-BibTeX
 
+* News in version 1.0
+
+** CL-BibTeX is now released under GNU LGPL 2.1 or later 
+   with Franz-style Lisp clarification.
+
+** An ASDF system definition file is included.
+
+   It was contributed by Hans Halvorson.
+
 * News in version 0.4
 
 ** BibTeX's output line breaking mechanism has been implemented.
