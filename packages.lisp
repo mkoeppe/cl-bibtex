@@ -15,7 +15,7 @@
 
 (defpackage :bibtex-runtime
   (:use :common-lisp)
-  #+(or allegro clisp) (:shadow #:variable)
+  (:shadow #:variable)
   (:export #:*bib-macros* #:*bib-database* #:*bib-entries*
 	   #:*bib-entry* #:*bib-preamble* #:*bib-style*
 	   #:*bib-files* #:*cite-all-entries* #:*cite-keys*
@@ -41,7 +41,7 @@
 
 (defpackage :bibtex-compiler
   (:use :common-lisp :bibtex-runtime)
-  #+(or allegro clisp) (:shadow #:variable)
+  (:shadow #:variable)
   (:export #:compile-bst-file #:bibtex
 	   #:*bibtex-styles* #:*allow-load-lisp-bibtex-style*
 	   #:register-bibtex-style #:define-bibtex-style #:find-bibtex-style
