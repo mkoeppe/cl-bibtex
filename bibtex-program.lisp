@@ -1,4 +1,4 @@
-;; Copyright 2001, 2002 Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>
+;; Copyright 2001, 2002, 2007 Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>
 ;;
 ;; This code is free software; you can redistribute it and/or
 ;; modify it under the terms of version 2.1 of the GNU Lesser 
@@ -9,17 +9,7 @@
 ;; with names and copyright holders altered accordingly.
 
 
-(in-package :common-lisp-user)
-
-;;(let ((*load-verbose* nil)
-;;      (*compile-verbose* nil))
-;;  (load "/home/mkoeppe/p/cl-bibtex/bibtex.system")
-;;  (mk:operate-on-system :bibtex 'compile)
-;;  (mk:operate-on-system :bibtex 'load))
-
-(setq *load-verbose* nil)
-
-(require :bibtex)
+(in-package :bibtex-program)
 
 ;;; The emulation of the bibtex program
 
@@ -47,16 +37,18 @@
     (unless file-stem
       (error "Need exactly one file argument"))
     (format *error-output*
-	    "This is CL-BibTeX, Version ~A" bibtex-compiler::+version+)
+	    "This is CL-BibTeX, Version ~A~%" bibtex-compiler::+version+)
     (bibtex-compiler:bibtex file-stem)))
 
 (defun emulate-bibtex (argv)
   ;;(princ "bar") (terpri)
   (let ((*gc-verbose* nil))
-    (handler-case (do-emulate-bibtex argv)
-      (error (condition)
-	(format *error-output* "~&bibtex: ~A~%"
-		condition)
-	(format *error-output* "~&Try `bibtex --help' for more information.~%")
-	(unix:unix-exit 1)))))
+    (multiple-value-bind (history err-count)
+	(handler-case (do-emulate-bibtex argv)
+	  (error (condition)
+	    (format *error-output* "~&bibtex: ~A~%"
+		    condition)
+	    (format *error-output* "~&Try `bibtex --help' for more information.~%")
+	    (port:quit 4)))
+      (port:quit history))))
 
