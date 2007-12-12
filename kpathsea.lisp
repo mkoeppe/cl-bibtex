@@ -1,5 +1,5 @@
 ;; An interface to Kpathsea (TeX's file search library)
-;; Copyright 2001, 2002 Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>
+;; Copyright 2001, 2002, 2007 Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>
 ;;
 ;; This code is free software; you can redistribute it and/or
 ;; modify it under the terms of version 2.1 of the GNU Lesser 
@@ -16,8 +16,8 @@
 ;;(eval-when (:compile-toplevel :load-toplevel :execute)
 ;;  (cl:require :PORT))
 
-#-(or cmu sbcl clisp)
-(cl:require :PORT)
+;; #-(or cmu sbcl clisp)
+;; (cl:require :PORT)
 
 (defun find-file (name)
   #+cmu
@@ -39,7 +39,20 @@
 	  (and line
 	       (parse-namestring line))
       (sb-ext:process-close process))))
-  #-(or cmu sbcl)
+  #+allegro
+  (let ((stream (excl:run-shell-command (vector "/bin/sh"
+						"/bin/sh"
+						"-c"
+						(format nil "~A ~A" "kpsewhich" (namestring name)))
+					:output :stream :wait nil)
+	  ;; Using run-shell-command with a vector is much faster
+	  ;; than with a list (tries to run $SHELL! -- this is what PORT does)
+	  ))
+    (let ((line (read-line stream nil nil)))
+      (prog1
+	  (and line (parse-namestring line))
+	(port:close-pipe stream))))
+  #-(or cmu sbcl allegro)
   (let ((stream (port:pipe-input "kpsewhich" (namestring name))))
     (let ((line (read-line stream nil nil)))
       (prog1
