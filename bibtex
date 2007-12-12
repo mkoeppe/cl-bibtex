@@ -1,3 +1,8 @@
 #! /bin/sh
-export LISPTYPE=cmucl
-/home/mkoeppe/p/cl-bibtex/run-lisp -i "/home/mkoeppe/p/cl-bibtex/bibtex.system" -i "/home/mkoeppe/p/cl-bibtex/bibtex-program.lisp"  -x "(emulate-bibtex ARGV)" $@
+#LISPTYPE=cmucl
+LISPTYPE=acl5
+ACL5=/localapp/franz/acl81.64/alisp
+export ACL5
+export LISPTYPE
+BIBTEXDIR=/home/mkoeppe/p/cl-bibtex
+${BIBTEXDIR}/run-lisp -i "${BIBTEXDIR}/bibtex.asd" -x "(setq *load-verbose* nil) (asdf:oos (quote asdf:load-op) :bibtex :verbose nil)"  -x '(funcall (find-symbol (symbol-name :emulate-bibtex) :bibtex-program) ARGV)' $@
