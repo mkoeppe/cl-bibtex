@@ -73,6 +73,8 @@ everything up to the beginning of the next entry."
 (defvar *bib-entry-type-functions* nil
   "An alist mapping BibTeX entry types to formatter functions")
 
+(defparameter *identifier-growth* 32)
+
 (defun read-bib-identifier ()
   "Read an identifier from *BIB-STREAM*, returning it as a string, or
 nil if no identifier could be read."
@@ -82,7 +84,7 @@ nil if no identifier could be read."
 	(loop as char = (peek-char nil *bib-stream*)
 	      until (or (whitespace-p char)
 			(member char '(#\" #\# #\% #\' #\( #\) #\, #\= #\{ #\} )))
-	      do (vector-push-extend (read-char *bib-stream*) s))
+	      do (vector-push-extend (read-char *bib-stream*) s *identifier-growth*))
 	(if (zerop (length s))
 	    nil
 	    s))))
@@ -113,19 +115,19 @@ hash-table *BIB-DATABASE* and using/updating the macro hash-table
 pairs of braces. Return a string of everything read, except for the
 right delimiter."
   (let ((brace-level 0)
-	(chars '()))
+	(result (make-array 32 :element-type 'character :fill-pointer 0 :adjustable t)))
     (loop (let ((char (read-char stream nil nil)))
 	    (cond
 	      ((and (char= char right-delimiter)
 		    (zerop brace-level))
-	       (return (coerce (reverse chars) 'string)))
+	       (return result))
 	      ((char= char #\{)
 	       (incf brace-level))
 	      ((char= char #\})
 	       (if (zerop brace-level)
 		   (bib-warn "Unbalanced braces")
 		   (decf brace-level))))
-	    (setq chars (cons char chars))))))
+	    (vector-push-extend char result 32)))))
 
 (defun read-bib-field-token ()
   (case (peek-char t *bib-stream*)
@@ -350,7 +352,7 @@ well."
     (cond
       ((eql cite-keys t)
        (loop for key being each hash-key in *bib-database*
-	     do (vector-push-extend (get-merged-bib-entry key) bib-entries)))
+	     do (vector-push-extend (get-merged-bib-entry key) bib-entries 256)))
       (t
        (let ((crossref-hash (make-hash-table :test 'equalp))
 	     (processed-keys '()))
@@ -373,13 +375,13 @@ well."
 	   (dolist (key cite-keys)
 	     (let ((entry (get-merged-bib-entry key)))
 	       (when entry
-		 (vector-push-extend entry bib-entries))))
+		 (vector-push-extend entry bib-entries 256))))
 	   (loop for key being each hash-key in crossref-hash
 		 and count being each hash-value in crossref-hash
 		 when (>= count min-crossrefs)
 		 do (let ((entry (get-merged-bib-entry key)))
 		      (when entry
-			(vector-push-extend entry bib-entries)))))))
+			(vector-push-extend entry bib-entries 256)))))))
     (coerce bib-entries 'list)))
 
 ;;; BibTeX names
@@ -608,7 +610,8 @@ many text characters.")
   (do ((tokens tokens (cdr tokens))
        (token-index 0 (+ token-index 1)))
       ((null tokens))
-    (let ((token (car tokens)))
+    (let ((token (car tokens))
+	  (*print-pretty* nil))
       (unless (zerop token-index)
 	(cond
 	  (inter-token-string
@@ -628,11 +631,13 @@ many text characters.")
       (cond
 	(full
 	 (princ (cdr token) stream))
-	(t ;; FIXME: Handle special characters here (415)
-	 (princ (char (cdr token) 0) stream))))))
+	(t ;; Abbreviate
+	 (write-tex-group (list (first (parse-tex-string (cdr token))))
+			  stream))))))
 
 (defun format-bibtex-name (stream format-string bibtex-name)
-  (let ((string-output nil)
+  (let ((*print-pretty* nil)
+	(string-output nil)
 	(end (length format-string)))
     (cond
       ((null stream) (setq stream (make-string-output-stream)
@@ -784,7 +789,7 @@ trailing whitespace is flushed if :SKIP-WHITESPACE is non-nil."
 				  :initial-element char)))
 	  (loop for char = (peek-char nil stream nil #\Space)
 		while (tex-alpha-char-p char :at-is-letter at-is-letter)
-		do (vector-push-extend (read-char stream) result))
+		do (vector-push-extend (read-char stream) result 32))
 	  (when skip-whitespace
 	    (peek-char t stream nil nil))
 	  result)
@@ -867,7 +872,7 @@ the delimiter, which is left in the stream."
     (loop as char = (peek-char nil stream nil nil)
 	  until (or (null char)
 		    (member char delimiters))
-	  do (vector-push-extend (read-char stream) s))
+	  do (vector-push-extend (read-char stream) s 64))
     s))
 
 (defun aux-bibdata-command ()
@@ -922,41 +927,42 @@ output line.  If there's no whitespace character to break the line at,
 we break it just before *BBL-MAX-PRINT-LINE*, append a comment
 character (%), and don't indent the next line."
   (loop for char across string do
- 	(vector-push-extend char *bbl-line-buffer*))
+       (vector-push-extend char *bbl-line-buffer* 128))
   (when *bbl-max-print-line*
-    (loop while (> (length *bbl-line-buffer*) *bbl-max-print-line*) do
-	  ;; Break that line
-	  (let ((white-space-index
-		 (position-if #'whitespace-p *bbl-line-buffer*
-			      :start *bbl-min-print-line*
-			      :end (+ *bbl-max-print-line* 1)
-			      :from-end t)))
-	    (cond
-	      (white-space-index	; have a whitespace character
-	       (let ((non-space-index
-		      (position-if (complement #'whitespace-p) *bbl-line-buffer*
-				   :end white-space-index
-				   :from-end t)))
-		 (when non-space-index ; ignore a line of just whitespace
-		   (princ (subseq *bbl-line-buffer* 0 (+ non-space-index 1))
-			  *bbl-output*)
-		   (terpri *bbl-output*)
-		   ;; shift the rest back
-		   (replace *bbl-line-buffer* *bbl-line-buffer*
-			    :start1 2 :start2 (+ white-space-index 1))
-		   ;; start the next line with two spaces
-		   (replace *bbl-line-buffer* "  " :start1 0)
-		   (decf (fill-pointer *bbl-line-buffer*)
-			 (- (+ white-space-index 1) 2)))))
-	      (t ; there's no whitespace character to break the line at
-	       (princ (subseq *bbl-line-buffer* 0 (- *bbl-max-print-line* 1))
-		      *bbl-output*)
-	       (princ "%" *bbl-output*)
-	       (terpri *bbl-output*)
-	       (replace *bbl-line-buffer* *bbl-line-buffer*
-			:start1 0 :start2 (- *bbl-max-print-line* 1))
-	       (decf (fill-pointer *bbl-line-buffer*)
-		     (- *bbl-max-print-line* 1))))))))
+    (let ((*print-pretty* nil))
+      (loop while (> (length *bbl-line-buffer*) *bbl-max-print-line*) do
+	 ;; Break that line
+	   (let ((white-space-index
+		  (position-if #'whitespace-p *bbl-line-buffer*
+			       :start *bbl-min-print-line*
+			       :end (+ *bbl-max-print-line* 1)
+			       :from-end t)))
+	     (cond
+	       (white-space-index	; have a whitespace character
+		(let ((non-space-index
+		       (position-if (complement #'whitespace-p) *bbl-line-buffer*
+				    :end white-space-index
+				    :from-end t)))
+		  (when non-space-index	; ignore a line of just whitespace
+		    (princ (subseq *bbl-line-buffer* 0 (+ non-space-index 1))
+			   *bbl-output*)
+		    (terpri *bbl-output*)
+		    ;; shift the rest back
+		    (replace *bbl-line-buffer* *bbl-line-buffer*
+			     :start1 2 :start2 (+ white-space-index 1))
+		    ;; start the next line with two spaces
+		    (replace *bbl-line-buffer* "  " :start1 0)
+		    (decf (fill-pointer *bbl-line-buffer*)
+			  (- (+ white-space-index 1) 2)))))
+	       (t ; there's no whitespace character to break the line at
+		(princ (subseq *bbl-line-buffer* 0 (- *bbl-max-print-line* 1))
+		       *bbl-output*)
+		(princ "%" *bbl-output*)
+		(terpri *bbl-output*)
+		(replace *bbl-line-buffer* *bbl-line-buffer*
+			 :start1 0 :start2 (- *bbl-max-print-line* 1))
+		(decf (fill-pointer *bbl-line-buffer*)
+		      (- *bbl-max-print-line* 1)))))))))
 
 (defun bbl-terpri ()
   ;; Trim trailing whitespace
@@ -964,8 +970,9 @@ character (%), and don't indent the next line."
 		   (whitespace-p (char *bbl-line-buffer*
 					(- (length *bbl-line-buffer*) 1))))
 	do (decf (fill-pointer *bbl-line-buffer*)))
-  (princ *bbl-line-buffer* *bbl-output*)
-  (terpri *bbl-output*)
+  (let ((*print-pretty* nil))
+    (princ *bbl-line-buffer* *bbl-output*)
+    (terpri *bbl-output*))
   (setf (fill-pointer *bbl-line-buffer*) 0)
   nil)
 
@@ -988,7 +995,37 @@ character (%), and don't indent the next line."
 least *MIN-CROSSREFS* times, it is included as a separate entry as
 well.")
 
-(defun read-all-bib-files-and-compute-bib-entries ()
+(defun parse-equivalent-entries-string (string)
+  (mapcar (lambda (s)
+	    (string-trim +bib-whitespace-character-list+ s))
+	  (split-sequence:split-sequence #\, string)))
+;; (parse-equivalent-entries-string "newbar,barvinok-2006-ehrhart-quasipolynomial")
+;; (parse-equivalent-entries-string "  newbar ,  barvinok-2006-ehrhart-quasipolynomial ")
+
+(defun compute-bib-equivalence-classes ()
+  "Return a list of lists of equivalent keys."
+  (let ((marks (make-hash-table :test 'equalp))
+	(components nil))
+    (loop for anchor being each hash-key in *bib-database* using (hash-value entry)
+       unless (gethash anchor marks) do
+       (let* ((component (list anchor))
+	      (keys-string (gethash "EQUIVALENT-ENTRIES" entry))
+	      (new-equivalent-keys (and keys-string
+					(parse-equivalent-entries-string keys-string))))
+	 (labels ((visit (node predecessors)
+		    (setf (gethash node marks) t)
+		    (dolist (neighbor-node new-equivalent-keys)
+		      (cond
+			((gethash neighbor-node marks))	; already marked
+			(t
+			 (push neighbor-node component)
+			 (visit neighbor-node (cons node predecessors)))))))
+	   (visit anchor nil)
+	   (push component components))))
+    components))
+;; (let ((*bib-database* (make-hash-table :test 'equalp)) (*bib-macros* (make-hash-table :test #'equalp)) (*bib-files* '("iba-bib" "weismant" "barvinok"))) (read-all-bib-files) (break) (compute-bib-equivalence-classes))
+
+(defun read-all-bib-files ()
   (dolist (file *bib-files*)
     (let ((expanded-file (kpathsea:find-file (concatenate 'string file ".bib"))))
       (if (not expanded-file)
@@ -996,9 +1033,26 @@ well.")
 	  (with-open-file (s expanded-file :if-does-not-exist nil)
 	    (if (not s)
 		(format *error-output* "I couldn't open database file `~A.bib'" expanded-file)
-		(read-bib-database s))))))
-  (cited-bib-entries (if *cite-all-entries* t *cite-keys*)
-		     :min-crossrefs *min-crossrefs*))
+		(read-bib-database s)))))))
+
+(defun check-multiple-cited-equivalent-entries (bib-entries)
+  (let ((equivalence-classes
+	 (compute-bib-equivalence-classes))
+	(bib-keys (mapcar (lambda (entry) (gethash "KEY" entry)) bib-entries)))
+    (loop for class in equivalence-classes
+       do (let ((cited-equivalent-entries (remove-if-not (lambda (key) (member key bib-keys :test 'equalp))
+							 class)))
+	    (when (> (length cited-equivalent-entries) 1)
+	      (bib-warn "These equivalent entries have been used: ~{ ~A~}" 
+			cited-equivalent-entries))))))
+
+(defun read-all-bib-files-and-compute-bib-entries ()
+  (read-all-bib-files)
+  (let ((bib-entries
+	 (cited-bib-entries (if *cite-all-entries* t *cite-keys*)
+			    :min-crossrefs *min-crossrefs*)))
+    (check-multiple-cited-equivalent-entries bib-entries)
+    bib-entries))
 
 ;;; Misc functions
 
@@ -1055,23 +1109,24 @@ control sequences or sub-lists representing groups."
   "Write the TeX GROUP to STREAM.  If a control word occurs at the end
 of the group, terminate it with whitespace unless NO-TERMINATE-P is
 true."
-  (loop for (token . tail) on group
-	do (etypecase token
-	     (character (princ token stream))
-	     (list (princ "{" stream)
-		   (write-tex-group token stream t)
-		   (princ "}" stream))
-	     (string (princ "\\" stream)
-		     (princ token stream)
-		     (unless (and (= (length token) 1)
-				  (not (alpha-char-p (char token 0))))
-		       ;; Control word, must be terminated
-		       (unless no-terminate-p ; unless otherwise requested
-			 (when (or (null tail)
-				   (and (characterp (car tail))
-					(alpha-char-p (car tail))))
-			   ; when a character or nothing (unknown stuff) follows
-			   (princ " " stream))))))))
+  (let ((*print-pretty* nil))
+    (loop for (token . tail) on group
+       do (etypecase token
+	    (character (princ token stream))
+	    (list (princ "{" stream)
+		  (write-tex-group token stream t)
+		  (princ "}" stream))
+	    (string (princ "\\" stream)
+		    (princ token stream)
+		    (unless (and (= (length token) 1)
+				 (not (alpha-char-p (char token 0))))
+		      ;; Control word, must be terminated
+		      (unless no-terminate-p ; unless otherwise requested
+			(when (or (null tail)
+				  (and (characterp (car tail))
+				       (alpha-char-p (car tail))))
+					; when a character or nothing (unknown stuff) follows
+			  (princ " " stream)))))))))
 
 (defun for-all-tex-tokens (function string-or-group)
   "Call FUNCTION for every token in the given TeX string (a string or
@@ -1390,5 +1445,9 @@ specially."
 (format-bibtex-name t "{ff} {ll}" (first (show-author "schnorr-euchner94")))
 
 (parse-bibtex-name-list '())
+
+(format-bibtex-name t "{f.} {l.}" (parse-bibtex-name "Matiyasevich, {\\relax{Yu}}ri V."))
+(format-bibtex-name t "{f.} {l.}" (parse-bibtex-name "Matiyasevich, {\\'E}"))
+
 
 ||#
