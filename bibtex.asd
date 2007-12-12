@@ -16,15 +16,20 @@
 
 (defsystem bibtex
   :version "0.4"  
+  :depends-on (#-(or cmu sbcl clisp) :port
+		 :split-sequence)
   :components ((:file "packages")
 	       (:file "kpathsea" :depends-on ("packages"))
 	       (:file "bibtex-runtime" :depends-on ("packages"))
 	       (:file "lisp-form-builder" :depends-on ("packages"))
-	       (:file "bst-functions" :depends-on ("packages" "lisp-form-builder"))
+	       (:file "bst-functions" :depends-on ("packages" "lisp-form-builder"
+							      "bibtex-runtime"))
 	       (:file "interpreter" :depends-on ("bst-functions"))
-	       (:file "bibtex-compiler" :depends-on ("lisp-form-builder" "bst-functions"))
+	       (:file "bibtex-compiler" :depends-on ("lisp-form-builder" "bst-functions" 
+									 "bibtex-runtime"))
 	       (:file "bst-reader" :depends-on ("interpreter" "bst-functions"
 						"bibtex-compiler" "bibtex-runtime"))
 	       (:file "bst-builtins" :depends-on ("bst-functions" "interpreter"
 						  "bibtex-runtime"))
-	       (:file "bibtex" :depends-on ("bibtex-compiler" "bst-reader"))))
+	       (:file "bibtex" :depends-on ("bibtex-compiler" "bst-reader"))
+	       (:file "bibtex-program" :depends-on ("bibtex"))))
