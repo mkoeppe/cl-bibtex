@@ -46,3 +46,7 @@
 	   #:*bibtex-styles* #:*allow-load-lisp-bibtex-style*
 	   #:register-bibtex-style #:define-bibtex-style #:find-bibtex-style
 	   #:lisp-bibtex-style #:interpreted-bibtex-style))
+
+(defpackage :bibtex-program
+  (:use :common-lisp :bibtex-runtime :bibtex-compiler)
+  (:export #:do-emulate-bibtex #:emulate-bibtex))
