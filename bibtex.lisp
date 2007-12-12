@@ -208,11 +208,11 @@ if no style of the requested name has been found."
        (cdr it))
       ((and *allow-load-lisp-bibtex-style*
 	    (setq it (kpathsea:find-file
-		      (make-pathname :type "LBST" :case :common
+		      (make-pathname :type "lbst" ;;:case :common
 				     :defaults style))))
        (lisp-bibtex-style it))
       ((setq it (kpathsea:find-file
-		 (make-pathname :type "BST" :case :common
+		 (make-pathname :type "bst" ;;:case :common
 				:defaults style)))
        (interpreted-bibtex-style it))
       (t (error "Could not find a BibTeX style named `~A'." style)))))
@@ -223,7 +223,8 @@ bibliographic databases and the name of the bibliography style from
 TeX commands in the file `FILE-STEM.aux'.  Find the named bibliography
 style via `find-bibtex-style'; it can be overridden programmatically
 using the :STYLE argument (a string or a function designator).  Print the
-formatted bibliography to the file `FILE-STEM.bbl'."
+formatted bibliography to the file `FILE-STEM.bbl'.
+Return two values, the values of *history* and *err-count*. "
   (let ((*bib-macros* (make-hash-table :test #'equalp))
 	(*bib-database* (make-hash-table :test #'equalp))
 	(*bib-preamble* "")
@@ -235,7 +236,7 @@ formatted bibliography to the file `FILE-STEM.bbl'."
 	(*err-count* 0)
 	(*bib-style* nil)
 	(*bst-functions* (builtin-bst-functions)))	
-    (read-aux-file (make-pathname :type "AUX" :case :common
+    (read-aux-file (make-pathname :type "aux" ;;:case :common
 				  :defaults file-stem))
     (let ((style-function
 	   (cond
@@ -244,11 +245,13 @@ formatted bibliography to the file `FILE-STEM.bbl'."
 	     ((symbolp style) (fdefinition style))
 	     ((stringp style) (find-bibtex-style style))
 	     (t (error "Bad :STYLE argument: ~S" style)))))
-      (with-open-file (bbl-output (make-pathname :type "BBL" :case :common
+      (with-open-file (bbl-output (make-pathname :type "bbl" ;;:case :common
 						 :defaults file-stem)
-				  :direction :output)
+				  :direction :output
+				  :if-exists :supersede)
 	(with-bbl-output (bbl-output)
-	  (funcall style-function))))))
+	  (funcall style-function))))
+    (values *history* *err-count*)))
 
 ;;;;
 
