@@ -11,7 +11,7 @@
 
 (in-package bibtex-compiler)
 
-(defconstant +version+ "0.4")
+(defconstant +version+ "1.0+cvs")
 
 ;;; The compiler front-end
 

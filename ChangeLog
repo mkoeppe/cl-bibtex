@@ -1,3 +1,52 @@
+2007-12-13  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
+
+	* bibtex-program.lisp: Change the defaults to
+	*bibtex-split-initials* = true; use the command-line option
+	-no-split-initials to change it.
+
+	* bibtex-runtime.lisp (tokenize-bibtex-name):
+	Warn when initials are split.
+
+	* bibtex-runtime.lisp (process-bib-entry-command):
+	Signal a bib-error on repeated entries.
+
+	* bibtex-program.lisp (emulate-bibtex):
+	Report number and type of errors.
+
+	* bibtex.lisp, bibtex-runtime.lisp:
+	Be more verbose, like the original BibTeX
+
+2007-12-12  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
+
+	* bibtex-runtime.lisp: Attempt to fix some excessive consing.
+
+	(format-bibtex-name-component): Properly handle abbreviating names that start
+	with special characters.  Example: "Matiyasevich, {\\relax{Yu}}ri V."
+
+	(parse-equivalent-entries-string, compute-bib-equivalence-classes,
+	check-multiple-cited-equivalent-entries): New.
+	(read-all-bib-files-and-compute-bib-entries): Use it here.
+
+	* bibtex.lisp: Fix pathname cases on Allegro CL.
+
+	(bibtex): Return error history and error count.
+
+	* bibtex: Fix according to new packaging.
+
+	* bibtex-program.lisp: Put definitions in the package :bibtex-program.
+
+	(emulate-bibtex): Signal an exit code according to the value of
+	*history* at the end of the bibtex run.
+
+	* bibtex.asd: Fix some dependencies to remove compiler warnings.
+	Add bibtex-program as a source file.
+
+	* kpathsea.lisp: Remove use of cl:require.
+	Add a specialized implementation for Allegro CL, where the
+	implementation of PORT:pipe-input is too slow.
+
+	* packages.lisp (:bibtex-program): New package.
+
 2007-08-24  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
 
 	Version 1.0
