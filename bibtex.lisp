@@ -231,6 +231,7 @@ Return two values, the values of *history* and *err-count*. "
 	(*bib-preamble* "")
 	(*bib-entries* ())
 	(*bib-files* ())
+	(*bibtex-split-initials-already-warned-hashtable* (make-hash-table :test #'equal))
 	(*cite-all-entries* nil)
 	(*cite-keys* ())
 	(*history* +spotless-history+)

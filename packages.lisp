@@ -25,7 +25,8 @@
 	   #:read-all-bib-files-and-compute-bib-entries
 	   #:bibtex-name #:make-bibtex-name #:bibtex-name-first
 	   #:bibtex-name-von #:bibtex-name-last #:bibtex-name-jr
-	   #:*bibtex-split-initials* #:parse-bibtex-name #:parse-bibtex-name-list
+	   #:*bibtex-split-initials* #:*bibtex-split-initials-already-warned-hashtable*
+	   #:parse-bibtex-name #:parse-bibtex-name-list
 	   #:*bibtex-long-token-length* #:*bibtex-long-name-length*
 	   #:format-bibtex-name
 	   #:format-nth-bibtex-name #:num-bibtex-names #:bibtex-substring
