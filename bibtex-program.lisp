@@ -15,7 +15,7 @@
 
 (defun do-emulate-bibtex (command-line-args)
   (let ((*min-crossrefs* 2)
-	(*bibtex-split-initials* nil)
+	(*bibtex-split-initials* t)
 	(file-stem nil))
     (dolist (arg command-line-args)
       (cond
@@ -23,6 +23,8 @@
 	     (length "-min-crossrefs="))
 	(setq *min-crossrefs*
 	      (parse-integer arg :start (length "-min-crossrefs="))))
+       ((string= arg "-no-split-initials")
+	(setq *bibtex-split-initials* nil))
        ((string= arg "-split-initials")
 	(setq *bibtex-split-initials* t))
        ((string= arg "-terse")
