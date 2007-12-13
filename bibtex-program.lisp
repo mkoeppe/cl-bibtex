@@ -50,5 +50,9 @@
 		    condition)
 	    (format *error-output* "~&Try `bibtex --help' for more information.~%")
 	    (port:quit 4)))
+      (unless (zerop history)
+	(format *error-output* 
+		"~&(There ~[were~;was~:;were~] ~:*~D ~[~;warning~;error~;fatal~] message~:*~:P)~%"
+		err-count history))
       (port:quit history))))
 
