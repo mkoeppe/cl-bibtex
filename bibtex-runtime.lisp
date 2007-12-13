@@ -1047,25 +1047,25 @@ well.")
 
 (defparameter *check-multiple-cited-equivalent-entries* t
   "If true, perform the following extension of BibTeX behavior:
-The attribute EQUIVALENT-ENTRIES of a bibliographic entry specifies
-the keys of other bibliographic entries that are to be considered
-equivalent.  We compute the equivalence classes spanned by these
-equivalences, and warn if multiple equivalent keys are used in 
-one document (we warn because the original BibTeX will produce a
-bibliography that contains several copies of that entry).  Then
-we pick arbitrarily one of the equivalent entries.")
+The attribute EQUIVALENT-ENTRIES of a bibliographic entry
+specifies the keys of other bibliographic entries that are to be
+considered equivalent.  We compute the equivalence classes
+spanned by these equivalences, and warn if multiple equivalent
+keys are used in one document (we warn because both we and the
+original BibTeX will produce a bibliography that contains several
+copies of that entry).")
 
 (defun check-multiple-cited-equivalent-entries (bib-entries)
   (let ((equivalence-classes
 	 (compute-bib-equivalence-classes))
 	(bib-keys (mapcar (lambda (entry) (gethash "KEY" entry)) bib-entries)))
     (loop for class in equivalence-classes
-       do (let ((cited-equivalent-entries
+       do (let ((cited-equivalent-keys
 		 (remove-if-not (lambda (key) (member key bib-keys :test 'equalp))
 				class)))
-	    (when (> (length cited-equivalent-entries) 1)
-	      (bib-warn "These equivalent entries have been used: ~{ ~A~}" 
-			cited-equivalent-entries))))))
+	    (when (> (length cited-equivalent-keys) 1)
+	      (bib-warn "These equivalent entries have been used:~{ ~A~}" 
+			cited-equivalent-keys kept-equivalent-key))))))
 
 (defun read-all-bib-files-and-compute-bib-entries ()
   (read-all-bib-files)
