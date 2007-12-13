@@ -259,6 +259,8 @@ non-nil, remove any leading or trailing whitespace."
 	  collecting char into list
 	  finally (if (char= char #\,) (unread-char char *bib-stream*))
 	  (setq key (coerce list 'string)))
+    (when (gethash key *bib-database*) 
+      (bib-error "Repeated entry---~A" key))
     (unless (char= (peek-char t *bib-stream*) #\,)
       (bib-error "Expected `,' character"))
     (read-char *bib-stream*)
