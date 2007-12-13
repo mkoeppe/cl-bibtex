@@ -813,6 +813,8 @@ found in *AUX-FILE-COMMANDS*, call the associated function."
 	  (progn
 	    (format *error-output* "~&I'm skipping whatever remains of this command~%")
 	    (read-line *aux-stream* nil ""))))))
+
+(defvar *aux-file-level* 0)
 	   
 (defun read-aux-file-recursively (name)
   (let ((full-name (kpathsea:find-file name)))
@@ -821,6 +823,9 @@ found in *AUX-FILE-COMMANDS*, call the associated function."
     (with-open-file (*aux-stream* full-name :if-does-not-exist nil)
       (unless *aux-stream*
 	(bib-fatal "I couldn't open auxiliary file: ~S" name))
+      (if (zerop *aux-file-level*)
+	  (format *error-output* "~&The top-level auxiliary file: ~A~%" full-name)
+	  (format *error-output* "~&A level-~D auxiliary file: ~A~%" *aux-file-level* full-name))
       (loop as char = (peek-char nil *aux-stream* nil nil)
 	    while char
 	    do (cond
@@ -833,7 +838,8 @@ found in *AUX-FILE-COMMANDS*, call the associated function."
   "Read an AUX file, modifying *CITE-KEYS*, *CITE-ALL-ENTRIES*,
 *BIB-FILES*, and *BIB-STYLE*."
   (let ((*citation-seen-p* nil)
-	(*bibdata-seen-p* nil))
+	(*bibdata-seen-p* nil)
+	(*aux-file-level* 0))
     (read-aux-file-recursively name)
   ;; check everything ok
   (flet ((aux-end-error (what)
@@ -852,7 +858,8 @@ found in *AUX-FILE-COMMANDS*, call the associated function."
   "Process an AUX-file \\@input command."
   (unless (char= (read-char *aux-stream* nil #\Space) #\{)
     (aux-error "Expected `{'"))
-  (let ((file-name (scan-balanced-braces *aux-stream* #\})))
+  (let ((file-name (scan-balanced-braces *aux-stream* #\}))
+	(*aux-file-level* (1+ *aux-file-level*)))
     (read-aux-file-recursively file-name)))
 
 (defun aux-bibstyle-command ()
@@ -1026,22 +1033,36 @@ well.")
 ;; (let ((*bib-database* (make-hash-table :test 'equalp)) (*bib-macros* (make-hash-table :test #'equalp)) (*bib-files* '("iba-bib" "weismant" "barvinok"))) (read-all-bib-files) (break) (compute-bib-equivalence-classes))
 
 (defun read-all-bib-files ()
-  (dolist (file *bib-files*)
-    (let ((expanded-file (kpathsea:find-file (concatenate 'string file ".bib"))))
-      (if (not expanded-file)
-	  (format *error-output* "I couldn't find database file `~A.bib'" file)
-	  (with-open-file (s expanded-file :if-does-not-exist nil)
-	    (if (not s)
-		(format *error-output* "I couldn't open database file `~A.bib'" expanded-file)
-		(read-bib-database s)))))))
+  (loop for file in *bib-files*
+     for file-number from 1
+     do (let ((expanded-file (kpathsea:find-file (concatenate 'string file ".bib"))))
+	  (if (not expanded-file)
+	      (format *error-output* "I couldn't find database file `~A.bib'" file)
+	      (with-open-file (s expanded-file :if-does-not-exist nil)
+		(if (not s)
+		    (format *error-output* "I couldn't open database file `~A.bib'" expanded-file)
+		    (progn
+		      (format *error-output* "~&Database file #~D: ~A~%" file-number expanded-file)
+		      (read-bib-database s))))))))
+
+(defparameter *check-multiple-cited-equivalent-entries* t
+  "If true, perform the following extension of BibTeX behavior:
+The attribute EQUIVALENT-ENTRIES of a bibliographic entry specifies
+the keys of other bibliographic entries that are to be considered
+equivalent.  We compute the equivalence classes spanned by these
+equivalences, and warn if multiple equivalent keys are used in 
+one document (we warn because the original BibTeX will produce a
+bibliography that contains several copies of that entry).  Then
+we pick arbitrarily one of the equivalent entries.")
 
 (defun check-multiple-cited-equivalent-entries (bib-entries)
   (let ((equivalence-classes
 	 (compute-bib-equivalence-classes))
 	(bib-keys (mapcar (lambda (entry) (gethash "KEY" entry)) bib-entries)))
     (loop for class in equivalence-classes
-       do (let ((cited-equivalent-entries (remove-if-not (lambda (key) (member key bib-keys :test 'equalp))
-							 class)))
+       do (let ((cited-equivalent-entries
+		 (remove-if-not (lambda (key) (member key bib-keys :test 'equalp))
+				class)))
 	    (when (> (length cited-equivalent-entries) 1)
 	      (bib-warn "These equivalent entries have been used: ~{ ~A~}" 
 			cited-equivalent-entries))))))
@@ -1051,7 +1072,8 @@ well.")
   (let ((bib-entries
 	 (cited-bib-entries (if *cite-all-entries* t *cite-keys*)
 			    :min-crossrefs *min-crossrefs*)))
-    (check-multiple-cited-equivalent-entries bib-entries)
+    (when *check-multiple-cited-equivalent-entries*
+      (check-multiple-cited-equivalent-entries bib-entries))
     bib-entries))
 
 ;;; Misc functions

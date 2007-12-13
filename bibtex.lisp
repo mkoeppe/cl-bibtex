@@ -214,6 +214,7 @@ if no style of the requested name has been found."
       ((setq it (kpathsea:find-file
 		 (make-pathname :type "bst" ;;:case :common
 				:defaults style)))
+       (format *error-output* "~&The style file: ~A~%" it)
        (interpreted-bibtex-style it))
       (t (error "Could not find a BibTeX style named `~A'." style)))))
 
