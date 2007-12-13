@@ -1065,7 +1065,7 @@ copies of that entry).")
 				class)))
 	    (when (> (length cited-equivalent-keys) 1)
 	      (bib-warn "These equivalent entries have been used:~{ ~A~}" 
-			cited-equivalent-keys kept-equivalent-key))))))
+			cited-equivalent-keys))))))
 
 (defun read-all-bib-files-and-compute-bib-entries ()
   (read-all-bib-files)
