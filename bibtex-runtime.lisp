@@ -1026,8 +1026,7 @@ well.")
 	(neighbors-hash (make-hash-table :test 'equalp)))
     ;; Compute the neighbors (symmetric)
     (loop for anchor being each hash-key in *bib-database* using (hash-value entry)
-       do (let* ((component (list anchor))
-		 (keys-string (gethash "EQUIVALENT-ENTRIES" entry))
+       do (let* ((keys-string (gethash "EQUIVALENT-ENTRIES" entry))
 		 (new-equivalent-keys (and keys-string
 					   (parse-equivalent-entries-string keys-string))))
 ;; 	    (when new-equivalent-keys
