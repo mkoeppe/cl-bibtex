@@ -1022,23 +1022,33 @@ well.")
 (defun compute-bib-equivalence-classes ()
   "Return a list of lists of equivalent keys."
   (let ((marks (make-hash-table :test 'equalp))
-	(components nil))
+	(components nil)
+	(neighbors-hash (make-hash-table :test 'equalp)))
+    ;; Compute the neighbors (symmetric)
     (loop for anchor being each hash-key in *bib-database* using (hash-value entry)
-       unless (gethash anchor marks) do
-       (let* ((component (list anchor))
-	      (keys-string (gethash "EQUIVALENT-ENTRIES" entry))
-	      (new-equivalent-keys (and keys-string
-					(parse-equivalent-entries-string keys-string))))
-	 (labels ((visit (node predecessors)
-		    (setf (gethash node marks) t)
-		    (dolist (neighbor-node new-equivalent-keys)
-		      (cond
-			((gethash neighbor-node marks))	; already marked
-			(t
-			 (push neighbor-node component)
-			 (visit neighbor-node (cons node predecessors)))))))
-	   (visit anchor nil)
-	   (push component components))))
+       do (let* ((component (list anchor))
+		 (keys-string (gethash "EQUIVALENT-ENTRIES" entry))
+		 (new-equivalent-keys (and keys-string
+					   (parse-equivalent-entries-string keys-string))))
+;; 	    (when new-equivalent-keys
+;; 	      (format *error-output* "~&;; Equivalent to ~A:~{ ~A~}~%" anchor new-equivalent-keys))
+	    (setf (gethash anchor neighbors-hash) 
+		  (union new-equivalent-keys (gethash anchor neighbors-hash)))
+	    (dolist (key new-equivalent-keys)
+	      (pushnew anchor (gethash key neighbors-hash) :test 'equalp))))
+    (loop for anchor being each hash-key in neighbors-hash using (hash-value neighbors)
+       unless (gethash anchor marks) 
+       do (let ((component (list anchor)))
+	    (labels ((visit (node predecessors)
+		       (setf (gethash node marks) t)
+		       (dolist (neighbor-node neighbors)
+			 (cond
+			   ((gethash neighbor-node marks)) ; already marked
+			   (t
+			    (push neighbor-node component)
+			    (visit neighbor-node (cons node predecessors)))))))
+	      (visit anchor nil)
+	      (push component components))))
     components))
 ;; (let ((*bib-database* (make-hash-table :test 'equalp)) (*bib-macros* (make-hash-table :test #'equalp)) (*bib-files* '("iba-bib" "weismant" "barvinok"))) (read-all-bib-files) (break) (compute-bib-equivalence-classes))
 
