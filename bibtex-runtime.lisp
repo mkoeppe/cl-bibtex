@@ -393,13 +393,14 @@ well."
 list of name tokens (SEP-CHAR TOKEN-STRING)."
   first von last jr)
 
-(defvar *bibtex-split-initials* nil
+(defvar *bibtex-split-initials* t
   "If non-nil, BibTeX understands that there are two abbreviated first
 names in names like `Padberg, M.W.'.  The original BibTeX 0.99c,
 written by Oren Patashnik in the WEB language, thinks that `M.W.' is a
 single first name; hence, in abbreviated format, the name becomes
-`M. Padberg' instead of `M. W. Padberg'.  That's the reason why the
-default value of this variable is nil.")
+`M. Padberg' instead of `M. W. Padberg'.")
+
+(defvar *bibtex-split-initials-already-warned-hashtable* nil)
 
 (defun tokenize-bibtex-name (name-string &key (start 0) (end nil))
   "Break a BibTeX name into name tokens."
@@ -459,7 +460,14 @@ default value of this variable is nil.")
 	  ((and (char= char #\.)
 		*bibtex-split-initials*
 		(zerop brace-level)
-		token-start)
+		token-start
+		(< (1+ index) end)
+		(let ((next-char (char name-string (1+ index))))
+		  (and (not (whitespace-p next-char)) (not (sepchar-p next-char)))))
+	   (let ((name (subseq name-string start (or end (length name-string)))))
+	     (unless (gethash name *bibtex-split-initials-already-warned-hashtable*)
+	       (bib-warn "Splitting the initials in the name `~A';~%  I suggest you add spaces between initials in the database entry" name)
+	       (setf (gethash name  *bibtex-split-initials-already-warned-hashtable*) t)))
 	   (setq tokens (cons (cons (or sep-char #\Space)
 				    (subseq name-string token-start (+ index 1)))
 			      tokens)
