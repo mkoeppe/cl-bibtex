@@ -44,7 +44,7 @@
 
 (define-bst-primitive "call.type$" () ()
   :interpreted 
-  (let* ((type (gethash "ENTRY-TYPE" *bib-entry*))
+  (let* ((type (bib-entry-type *bib-entry*))
 	 (function (or (get-bst-function-of-type type '(wiz-defined compiled-wiz-defined))
 		       (get-bst-function-of-type 'default.type '(wiz-defined compiled-wiz-defined)))))
     (when function
@@ -52,7 +52,7 @@
   :compiled
   (let ((type/fun-sym (bst-intern "TYPE/FUN")))
     `(let ((,type/fun-sym
-	    (assoc (gethash "ENTRY-TYPE" *bib-entry*)
+	    (assoc (bib-entry-type *bib-entry*)
 		   *bib-entry-type-functions* :test 'string-equal)))
       (if ,type/fun-sym
 	  (funcall (cdr ,type/fun-sym))
@@ -101,8 +101,8 @@
 		     0)))
 
 (define-bst-primitive "cite$" () ((string))
-  :interpreted (gethash "KEY" *bib-entry* "")
-  :compiled `(gethash "KEY" *bib-entry* ""))
+  :interpreted (or (bib-entry-cite-key *bib-entry*) "")
+  :compiled `(or (bib-entry-cite-key *bib-entry*) ""))
 
 (define-bst-primitive "duplicate$" ((object t)) (t t)
   :interpreted (values object object))
@@ -201,8 +201,8 @@
   :side-effects-p t)
 
 (define-bst-primitive "type$" () ((string))
-  :interpreted (gethash "ENTRY-TYPE" *bib-entry* "")
-  :compiled `(gethash "ENTRY-TYPE" *bib-entry* ""))
+  :interpreted (or (bib-entry-type *bib-entry*) "")
+  :compiled `(or (bib-entry-type *bib-entry*) ""))
 
 (define-bst-primitive "warning$" ((warning (string))) ()
   :interpreted (bib-warn warning)

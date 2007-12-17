@@ -20,6 +20,7 @@
 	   #:*bib-entry* #:*bib-preamble* #:*bib-style*
 	   #:*bib-files* #:*cite-all-entries* #:*cite-keys*
 	   #:*bib-entry-type-functions* #:*min-crossrefs*
+	   #:bib-entry-cite-key #:bib-entry-type
 	   #:read-aux-file #:read-bib-database #:cited-bib-entries
 	   #:write-bib-entry
 	   #:read-all-bib-files-and-compute-bib-entries

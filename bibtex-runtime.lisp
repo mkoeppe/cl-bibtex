@@ -62,6 +62,20 @@ everything up to the beginning of the next entry."
   (mark-fatal)
   (error "Fatal BibTeX error"))
 
+;;; Interface to BibTeX entries
+
+;; BibTeX entries are EQUALP hash tables, the keys being arbitrary strings.
+;; In addition, we use two symbols as keys:
+
+(defvar +cite-key+ '+cite-key+)
+(defvar +entry-type+ '+entry-type+)
+
+(defmacro bib-entry-cite-key (entry)
+  `(gethash +cite-key+ ,entry))
+
+(defmacro bib-entry-type (entry)
+  `(gethash +entry-type+ ,entry))
+
 ;;; Reading the database files
 
 (defvar *bib-stream* nil)
@@ -265,8 +279,8 @@ non-nil, remove any leading or trailing whitespace."
       (bib-error "Expected `,' character"))
     (read-char *bib-stream*)
     (let ((entry (make-bib-entry)))
-      (setf (gethash "entry-type" entry) (string-downcase entry-type))
-      (setf (gethash "key" entry) key) 
+      (setf (bib-entry-type entry) (string-downcase entry-type))
+      (setf (bib-entry-cite-key entry) key) 
       (loop (multiple-value-bind (name value)
 		(read-bib-field t)
 	      (setf (gethash name entry)
@@ -288,12 +302,12 @@ non-nil, remove any leading or trailing whitespace."
 
 (defun write-bib-entry (entry &optional (stream *standard-output*))
   (format stream "~&@~A{~A"
-	  (gethash "entry-type" entry)
-	  (gethash "key" entry))
+	  (bib-entry-type entry)
+	  (bib-entry-cite-key entry))
   (loop for field being each hash-key in entry
 	and value being each hash-value in entry
-	unless (or (string-equal field "entry-type")
-		   (string-equal field "key"))
+	unless (or (eql field +entry-type+)
+		   (eql field +cite-key+))
 	do (format stream ",~%  ~A = {~A}" field value))
   (format stream "~%}~%"))
 
@@ -1125,7 +1139,7 @@ copies of that entry).")
 (defun check-multiple-cited-equivalent-entries (bib-entries)
   (let ((equivalence-classes
 	 (compute-bib-equivalence-classes))
-	(bib-keys (mapcar (lambda (entry) (gethash "KEY" entry)) bib-entries)))
+	(bib-keys (mapcar #'bib-entry-cite-key bib-entries)))
     (loop for class in equivalence-classes
        do (let ((cited-equivalent-keys
 		 (remove-if-not (lambda (key) (member key bib-keys :test 'equalp))
