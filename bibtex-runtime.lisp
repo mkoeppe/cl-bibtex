@@ -488,10 +488,58 @@ single first name; hence, in abbreviated format, the name becomes
 	       (setq token-start index))))))))
 
 (defun von-token-p (token)
-  ;; FIXME: The original BibTeX code also checks whether control
-  ;; sequences leading to lower-case characters are used.
-  (and (> (length (cdr token)) 0)
-       (lower-case-p (char (cdr token) 0))))
+  ;; From the BibTeX source code: "the von name
+  ;; starts with the first nonlast token whose first brace-level-0 letter
+  ;; is in lower case (for the purposes of this determination, an accented
+  ;; or foreign character at brace-level-1 that's in lower case will do, as
+  ;; well)."
+  (let ((string (cdr token)))
+    (and (> (length string) 0)
+	 (with-input-from-string (s string)
+	   (let ((brace-level 0))
+	     (loop 
+		for char = (read-char s nil nil)
+		while char
+		do (cond ((char= char #\{) 
+			   (incf brace-level)
+			   (when (and (= brace-level 1)
+				      (char= (peek-char nil s nil #\Space) #\\))
+			     ;; @<Check the special character (and |return|)@>=
+			     (read-char s) ;consume backslash
+			     ;; Check whether it is a special character; otherwise, 
+			     ;; just ignore the control sequence.
+			     (let* ((control-sequence (read-tex-control-sequence s))
+				    (foreign-character (find-foreign-character control-sequence)))
+			       (when foreign-character
+				 (return (lower-case-p (char control-sequence 0)))))
+			     ;; It is not a special character, so
+			     ;; treat it as an accented character.  We
+			     ;; now only scan till the end of the
+			     ;; brace group; the first alphabetic
+			     ;; character decides.  If nothing is
+			     ;; found within the brace group, decide
+			     ;; that is not a "von" token.
+			     (loop 
+				for char = (read-char s nil nil)
+				while char 
+				while (plusp brace-level)
+				do (cond ((upper-case-p char) 
+					  (return-from von-token-p nil))
+					 ((lower-case-p char) 
+					  (return-from von-token-p t))
+					 ((char= char #\{)
+					  (incf brace-level))
+					 ((char= char #\})
+					  (decf brace-level)))
+				finally (return-from von-token-p nil))))
+			 ((plusp brace-level)
+			  (when (char= char #\}) 
+			    (decf brace-level)))
+			 ;; The first alphabetic char at brace-level 0 decides:
+			 ((upper-case-p char) 
+			  (return nil))
+			 ((lower-case-p char) 
+			  (return t)))))))))
 
 (defun parse-bibtex-name (name-string &key (start 0) (end nil))
   "Break a BibTeX name into its components, returning a BIBTEX-NAME
@@ -1490,5 +1538,27 @@ specially."
 (format-bibtex-name t "{f.} {l.}" (parse-bibtex-name "Matiyasevich, {\\relax{Yu}}ri V."))
 (format-bibtex-name t "{f.} {l.}" (parse-bibtex-name "Matiyasevich, {\\'E}"))
 
+(parse-bibtex-name "Jes{\'u}s A. {D}e Loera")
+;; #S(bibtex-name :first ((#\Space . "Jes{'u}s") (#\Space . "A.")
+;;                        (#\Space . "{D}e"))
+;;                :von nil
+;;                :last ((#\Space . "Loera"))
+;;                :jr nil)
+;;; FIXME: Original BibTeX seems to recognize a "von" token here!?!  -FIXED.
+
+(parse-bibtex-name "Jes{\'u}s A. De Loera")
+;; #S(bibtex-name :first ((#\Space . "Jes{'u}s") (#\Space . "A.")
+;;                        (#\Space . "De"))
+;;                :von nil
+;;                :last ((#\Space . "Loera"))
+;;                :jr nil)
+(parse-bibtex-name "Jes{\'u}s A. de Loera")
+;; #S(bibtex-name :first ((#\Space . "Jes{'u}s") (#\Space . "A."))
+;;                :von ((#\Space . "de"))
+;;                :last ((#\Space . "Loera"))
+;;                :jr nil)
+
+(parse-bibtex-name "{\\relax{Ch}}ristos H. Papadimitriou")
 
 ||#
+
