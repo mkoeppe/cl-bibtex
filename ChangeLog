@@ -1,3 +1,19 @@
+2007-12-17  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
+
+	Use symbols +cite-key+ (rather than the string "KEY") and +entry-type+
+	(rather than the string "ENTRY-TYPE") as keys for the cite key and
+	the entry types in the hash table representing a bibliographic entry.
+	This removes the confusion with the bibliography-defined attribute "KEY".
+
+	* packages.lisp, bst-builtins.lisp,
+	bibtex-runtime.lisp (bib-entry-cite-key, bib-entry-type): New
+	accessor macros.  Use them throughout.
+
+2007-12-17  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
+
+	* bibtex-runtime.lisp (von-token-p): Implement precise BibTeX
+	behavior with regard to special characters.
+
 2007-12-13  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
 
 	* bibtex-program.lisp: Change the defaults to
