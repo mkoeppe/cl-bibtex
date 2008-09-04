@@ -1,3 +1,14 @@
+2008-09-03  Matthias Koeppe  <mkoeppe@math.ucdavis.edu>
+
+	* bibtex.asd: Fix ASDF system version. 
+	Reported by Cyrus Harmon.
+
+2008-09-03  Cyrus Harmon  <cyrus@cyrusharmon.org>
+
+	* bibtex.lisp, bibtex-runtime.lisp: Fix warnings by SBCL.
+
+	* bibtex-program.lisp: Remove dependency on PORT.
+
 2007-12-17  Matthias Koeppe  <mkoeppe@mail.math.uni-magdeburg.de>
 
 	Use symbols +cite-key+ (rather than the string "KEY") and +entry-type+
