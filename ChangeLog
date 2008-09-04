@@ -37,7 +37,7 @@
 	* bibtex-runtime.lisp: Attempt to fix some excessive consing.
 
 	(format-bibtex-name-component): Properly handle abbreviating names that start
-	with special characters.  Example: "Matiyasevich, {\\relax{Yu}}ri V."
+	with special characters.  Example: "Matiyasevich, {\relax{Yu}}ri V."
 
 	(parse-equivalent-entries-string, compute-bib-equivalence-classes,
 	check-multiple-cited-equivalent-entries): New.

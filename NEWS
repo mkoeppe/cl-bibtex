@@ -1,5 +1,80 @@
 An -*- outline -*- of the user-visible changes in CL-BibTeX
 
+* News since version 1.0
+
+** New feature
+
+*** Warn when "equivalent" BibTeX entries are cited.
+
+    Large bibliographic databases which arise from the collaboration
+    of several people often contain multiple copies of the same entry,
+    using different keys.  This is often hard to fix in the database,
+    because removing an entry breaks existing documents.  When several
+    of these "equivalent" BibTeX entries are cited in one document
+    (this happens most frequently in cut-and-paste works from several
+    authors), the formatted bibliography will contain several copies
+    of the same reference.
+
+    CL-BibTeX can now help to detect and fix this situation.  The
+    maintainer of the bibliographic database should add, to each
+    problematic entry, an attribute "equivalent-entries" that is a
+    comma-separated list of entries that should be considered
+    "equivalent".  (The usual BibTeX styles will ignore this
+    attribute.)  We also recommend to add a comment (or "annote"
+    attribute) that advises the user of the bibliographic database,
+    which entry to use instead of the current entry.
+
+    An example:
+
+      @article{newbar,
+	Author = {Barvinok, Alexander I.},
+	Journal = {Math. Comp.},
+	Number = {255},
+	Pages = {1449--1466},
+	Title = {Computing the {E}hrhart quasi-polynomial of a rational simplex},
+	Volume = {75},
+	Year = {2006},
+        equivalent-entries = {newbar,barvinok-2006-ehrhart-quasipolynomial}
+	annote = {In new documents, use the equivalent entry
+		  barvinok-2006-ehrhart-quasipolynomial rather than this entry!}
+      }
+
+    CL-BibTeX computes the equivalence classes spanned by these lists
+    of equivalent entries.  If equivalent entries are cited in one
+    document, CL-BibTeX will emit a warning.  The user can now fix the
+    citations in the document.
+
+** User interface changes
+
+*** Signal an error on repeated entries.
+
+    Unlike the original BibTeX, errors are also signalled for repeated
+    entries in the database that are not used.
+
+*** Emulate BibTeX's verbosity more thoroughly.
+
+    In particular, report which files are read; at the end of the run,
+    report the number and the type of errors.  This makes it possible
+    to use CL-BibTeX as a compatible replacement for BibTeX within
+    AUCTeX. 
+
+*** The CL-BibTeX split-initials features is now on by default.
+
+    In addition, CL-BibTeX emits a warning, so the user can fix the
+    entries in the bibliographic database to make them work correctly
+    with the original BibTeX too.
+
+** Improved BibTeX compatibility and bug fixes:
+
+*** Properly handle abbreviating names that start with special characters
+    or similar.  Example: "Matiyasevich, {\relax{Yu}}ri V."  now gets
+    abbreviated to "Matiyasevich, {\relax{Yu}}. V."
+
+*** Recognize "von" tokens in names that start with special characters.
+
+*** BibTeX styles using the KEY attribute of bibliographic entries now work
+    as expected.
+
 * News in version 1.0
 
 ** CL-BibTeX is now released under GNU LGPL 2.1 or later 
