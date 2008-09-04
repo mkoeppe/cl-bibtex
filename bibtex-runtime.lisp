@@ -168,10 +168,10 @@ right delimiter."
 	   (t
 	    definition)))))))
 
-(defconstant +bib-whitespace-character-list+
+(defvar +bib-whitespace-character-list+
   '(#\Newline #\Space #\Linefeed #\Return #\Page #\Tab))
 
-(defconstant +bib-sep-character-list+
+(defvar +bib-sep-character-list+
   '(#\~ #\-))
 
 (defun whitespace-p (char)
@@ -1139,7 +1139,7 @@ copies of that entry).")
 (defun check-multiple-cited-equivalent-entries (bib-entries)
   (let ((equivalence-classes
 	 (compute-bib-equivalence-classes))
-	(bib-keys (mapcar #'bib-entry-cite-key bib-entries)))
+	(bib-keys (mapcar (lambda (x) (bib-entry-cite-key x)) bib-entries)))
     (loop for class in equivalence-classes
        do (let ((cited-equivalent-keys
 		 (remove-if-not (lambda (key) (member key bib-keys :test 'equalp))
@@ -1468,7 +1468,7 @@ special characters in a very complicated way."
 
 ;;; The approximate calculation of text widths
 
-(defconstant +cmr10-character-widths+
+(defvar +cmr10-character-widths+
   '((#\Space . 278) (#\! . 278) (#\" . 500) (#\# . 833) (#\$ . 500) (#\% . 833)
     (#\& . 778) (#\' . 278) (#\( . 389) (#\) . 389) (#\* . 500) (#\+ . 778)
     (#\, . 278) (#\- . 333) (#\. . 278) (#\/ . 500) (#\0 . 500) (#\1 . 500)
