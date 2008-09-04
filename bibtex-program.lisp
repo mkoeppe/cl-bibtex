@@ -42,6 +42,20 @@
 	    "This is CL-BibTeX, Version ~A~%" bibtex-compiler::+version+)
     (bibtex-compiler:bibtex file-stem)))
 
+(defun quit (&optional code)
+  #+abcl (ext:quit code)
+  #+allegro (excl:exit code)
+  #+clisp (#+lisp=cl ext:quit #-lisp=cl lisp:quit code)
+  #+cmu (ext:quit code)
+  #+cormanlisp (win32:exitprocess code)
+  #+gcl (lisp:bye code)
+  #+lispworks (lw:quit :status code)
+  #+lucid (lcl:quit code)
+  #+sbcl (sb-ext:quit :unix-status
+                      (typecase code ((signed-byte 32) code) (null 0) (t 1)))
+  #-(or allegro clisp cmu cormanlisp gcl lispworks lucid sbcl)
+  (error 'not-implemented :proc (list 'quit code)))
+
 (defun emulate-bibtex (argv)
   ;;(princ "bar") (terpri)
   (let ((*gc-verbose* nil))
@@ -51,10 +65,10 @@
 	    (format *error-output* "~&bibtex: ~A~%"
 		    condition)
 	    (format *error-output* "~&Try `bibtex --help' for more information.~%")
-	    (port:quit 4)))
+	    (quit 4)))
       (unless (zerop history)
 	(format *error-output* 
 		"~&(There ~[were~;was~:;were~] ~:*~D ~[~;warning~;error~;fatal~] message~:*~:P)~%"
 		err-count history))
-      (port:quit history))))
+      (quit history))))
 
