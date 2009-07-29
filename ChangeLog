@@ -1,3 +1,11 @@
+2009-07-29  Matthias Koeppe  <mkoeppe@math.ucdavis.edu>
+
+	* bibtex-program.lisp (emulate-bibtex):
+	Bind *gc-verbose* only on lisps that have it.
+
+	* packages.lisp (make-bib-entry): Export.
+	Patch by Cyrus Harmon.
+
 2008-09-03  Matthias Koeppe  <mkoeppe@math.ucdavis.edu>
 
 	* bibtex.asd: Fix ASDF system version. 
