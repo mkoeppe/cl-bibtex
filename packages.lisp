@@ -22,6 +22,7 @@
 	   #:*bib-entry-type-functions* #:*min-crossrefs*
 	   #:bib-entry-cite-key #:bib-entry-type
 	   #:read-aux-file #:read-bib-database #:cited-bib-entries
+           #:make-bib-entry
 	   #:write-bib-entry
 	   #:read-all-bib-files-and-compute-bib-entries
 	   #:bibtex-name #:make-bibtex-name #:bibtex-name-first
