@@ -11,7 +11,7 @@
 
 (in-package :bibtex-compiler)
 
-(defvar +version+ "1.0+cvs")
+(defvar +version+ "1.0.1")
 
 ;;; The compiler front-end
 
