@@ -1,4 +1,14 @@
+2009-11-20  Matthias Koeppe  <mkoeppe@math.ucdavis.edu>
+
+	Version 1.0.1
+	
+	* bibtex.asd, bibtex.lisp, Makefile: Bump version number
+
+	* bibtex.lisp: Use keyword in in-package
+
 2009-07-29  Matthias Koeppe  <mkoeppe@math.ucdavis.edu>
+
+	* bibtex-program.lisp: Don't bind *gc-verbose* on sbcl.
 
 	* bibtex-program.lisp (emulate-bibtex):
 	Bind *gc-verbose* only on lisps that have it.
