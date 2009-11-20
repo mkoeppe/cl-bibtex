@@ -9,7 +9,7 @@
 ;; of the Franz Inc. preamble at http://opensource.franz.com/preamble.html
 ;; with names and copyright holders altered accordingly.
 
-(in-package bibtex-compiler)
+(in-package :bibtex-compiler)
 
 (defvar +version+ "1.0+cvs")
 
