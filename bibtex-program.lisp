@@ -58,7 +58,7 @@
 
 (defun emulate-bibtex (argv)
   ;;(princ "bar") (terpri)
-  (let (#+cmu (*gc-verbose* nil))
+  (let (#+cmu (ext:*gc-verbose* nil))
     (multiple-value-bind (history err-count)
 	(handler-case (do-emulate-bibtex argv)
 	  (error (condition)
