@@ -102,6 +102,7 @@ constant variables."
 		 (with-open-file (lisp-stream lisp-file :direction :output)
 		   (flet ((lisp-write (arg)
 			    (let ((*print-case* :downcase)
+				  (*print-length* nil)
 				  (*print-pprint-dispatch* *bibtex-pprint-dispatch*)
 				  (*package* *bst-package*))
 			      (pprint arg lisp-stream))
