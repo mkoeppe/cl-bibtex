@@ -477,7 +477,9 @@ single first name; hence, in abbreviated format, the name becomes
 		token-start
 		(< (1+ index) end)
 		(let ((next-char (char name-string (1+ index))))
-		  (and (not (whitespace-p next-char)) (not (sepchar-p next-char)))))
+		  (and (not (whitespace-p next-char)) 
+		       (not (sepchar-p next-char))
+		       (not (char= next-char #\,)))))
 	   (let ((name (subseq name-string start (or end (length name-string)))))
 	     (unless (gethash name *bibtex-split-initials-already-warned-hashtable*)
 	       (bib-warn "Splitting the initials in the name `~A';~%  I suggest you add spaces between initials in the database entry" name)
