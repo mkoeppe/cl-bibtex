@@ -64,18 +64,6 @@ everything up to the beginning of the next entry."
 
 ;;; Interface to BibTeX entries
 
-;; BibTeX entries are EQUALP hash tables, the keys being arbitrary strings.
-;; In addition, we use two symbols as keys:
-
-(defvar +cite-key+ '+cite-key+)
-(defvar +entry-type+ '+entry-type+)
-
-(defmacro bib-entry-cite-key (entry)
-  `(gethash +cite-key+ ,entry))
-
-(defmacro bib-entry-type (entry)
-  `(gethash +entry-type+ ,entry))
-
 ;;; Reading the database files
 
 (defvar *bib-stream* nil)
@@ -254,8 +242,31 @@ non-nil, remove any leading or trailing whitespace."
       (bib-error "Expected `~A' sign" close-char))))
 
 
-(defun make-bib-entry ()
-  (make-hash-table :size 16 :test 'equalp))
+(defstruct bib-entry
+  (type nil)
+  (cite-key "")
+  (sort-key% nil)
+  (dict (make-hash-table :size 16 :test 'equalp) :read-only t))
+
+(defun bib-entry-ref (key entry &optional default)
+  (gethash key (bib-entry-dict entry) default))
+
+(defun (setf bib-entry-ref) (value key entry &optional default)
+  (declare (ignore default))
+  (setf (gethash key (bib-entry-dict entry)) value))
+
+(defvar *generate-sort-key* #'identity)
+
+(defun bib-entry-sort-key (entry)
+  (or (bib-entry-sort-key% entry)
+      (setf (bib-entry-sort-key% entry)
+	  (funcall *generate-sort-key* (bib-entry-ref "SORT.KEY$" entry "")))))
+
+(defmethod cmp ((a bib-entry) (b bib-entry))
+  (cmp (bib-entry-sort-key a) (bib-entry-sort-key b)))
+
+(defmethod hash ((entry bib-entry))
+  (hash (bib-entry-sort-key entry)))
 
 (defun process-bib-entry-command (entry-type)
   (let* ((open-char (peek-char t *bib-stream*))
@@ -283,7 +294,7 @@ non-nil, remove any leading or trailing whitespace."
       (setf (bib-entry-cite-key entry) key) 
       (loop (multiple-value-bind (name value)
 		(read-bib-field t)
-	      (setf (gethash name entry)
+	      (setf (bib-entry-ref name entry)
 		    value))
 	    (let ((char (peek-char t *bib-stream*)))
 	    (cond
@@ -304,10 +315,8 @@ non-nil, remove any leading or trailing whitespace."
   (format stream "~&@~A{~A"
 	  (bib-entry-type entry)
 	  (bib-entry-cite-key entry))
-  (loop for field being each hash-key in entry
-	and value being each hash-value in entry
-	unless (or (eql field +entry-type+)
-		   (eql field +cite-key+))
+  (loop for field being each hash-key in (bib-entry-dict entry)
+	and value being each hash-value in (bib-entry-dict entry)
 	do (format stream ",~%  ~A = {~A}" field value))
   (format stream "~%}~%"))
 
@@ -321,13 +330,15 @@ non-nil, remove any leading or trailing whitespace."
 (defun merge-bib-entries (a b)
   "Return a fresh bib entry that merges A and B."
   (let ((entry (make-bib-entry)))
-    (loop for key being each hash-key in a
-	  and value being each hash-value in a
-	  do (setf (gethash key entry) value))
-    (loop for key being each hash-key in b
-	  and value being each hash-value in b
-	  do (unless (gethash key entry)
-	       (setf (gethash key entry) value)))
+    (setf (bib-entry-type entry) (bib-entry-type a)
+	  (bib-entry-cite-key entry) (bib-entry-cite-key a))
+    (loop for key being each hash-key in (bib-entry-dict a)
+	  and value being each hash-value in (bib-entry-dict a)
+	  do (setf (bib-entry-ref key entry) value))
+    (loop for key being each hash-key in (bib-entry-dict b)
+	  and value being each hash-value in (bib-entry-dict b)
+	  do (unless (bib-entry-ref key entry)
+	       (setf (bib-entry-ref key entry) value)))
     entry))
 
 (defun get-merged-bib-entry (key)
@@ -340,7 +351,7 @@ non-nil, remove any leading or trailing whitespace."
 			    key)
 		  nil)
 		 (t
-		  (let ((crossref (gethash "CROSSREF" entry)))
+		  (let ((crossref (bib-entry-ref "CROSSREF" entry)))
 		    (cond
 		      ((not crossref)
 		       entry)
@@ -379,7 +390,7 @@ well."
 		      (let ((entry (gethash key *bib-database*)))
 			(when entry	; we will issue a warning
 					; for non-existing keys later 
-			  (let ((crossref (gethash "CROSSREF" entry)))
+			  (let ((crossref (bib-entry-ref "CROSSREF" entry)))
 			    (when (and crossref
 				       (not (member crossref cite-keys
 						    :test 'string-equal)))
@@ -1090,7 +1101,7 @@ well.")
 	(neighbors-hash (make-hash-table :test 'equalp)))
     ;; Compute the neighbors (symmetric)
     (loop for anchor being each hash-key in *bib-database* using (hash-value entry)
-       do (let* ((keys-string (gethash "EQUIVALENT-ENTRIES" entry))
+       do (let* ((keys-string (bib-entry-ref "EQUIVALENT-ENTRIES" entry))
 		 (new-equivalent-keys (and keys-string
 					   (parse-equivalent-entries-string keys-string))))
 ;; 	    (when new-equivalent-keys
@@ -1530,18 +1541,18 @@ specially."
   (read-bib-database s))
 
 (let ((*bibtex-split-initials* t))
-  (parse-bibtex-name-list (gethash 'editor (gethash "johnson-trick-96" *bib-database*))))
+  (parse-bibtex-name-list (bib-entry-ref 'editor (gethash "johnson-trick-96" *bib-database*))))
 
 (defun show-author (id)
   (let ((*bibtex-split-initials* t))
-    (parse-bibtex-name-list (gethash "author" (gethash id *bib-database*)))))
+    (parse-bibtex-name-list (bib-entry-ref "author" (gethash id *bib-database*)))))
 
 (let ((*bibtex-split-initials* t))
   (remove-duplicates
    (sort 
     (loop for entry being each hash-value in *bib-database*
 	  appending (mapcar #'(lambda (name) (format-bibtex-name nil "{f.~}{vv~}{ll}{, jj}" name))
-			    (parse-bibtex-name-list (gethash "author" entry))))
+			    (parse-bibtex-name-list (bib-entry-ref "author" entry))))
     #'string<=)
    :test #'equal))
    
