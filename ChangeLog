@@ -1,3 +1,44 @@
+2009-11-25  Paul Foley  <paul@mises.com>
+
+	Add support for Unicode collation on CMUCL, using libicu.
+	
+	* icu.lisp: New file, Unicode collation support.
+
+	* packages.lisp: New exports bib-entry-ref, bib-entry-sort-key.
+	New dependency on package cmp.
+
+	* bibtex.asd, bibtex.system: New file, cmp.
+
+	* bst-functions.lisp: Use bib-entry-ref instead of gethash.
+
+	* bst-reader.lisp: Use comparison generics for sorting bib entries.
+
+	* cmp.lisp: New file, comparison generics.
+
+	* bibtex-runtime.lisp (bib-entry):
+	New struct.  Make bib-entries be a struct rather than a
+	hash table, and move the "special" entries for type and cite-key (and
+	sort-key) out into slots.
+	(bib-entry-ref): New function, use instead of gethash on bib entries.
+	(*generate-sort-key*): New variable, for pluggable Unicode support.
+	(bib-entry-sort-key): New.
+	(cmp, hash): New methods for comparison generics, calling
+	bib-entry-sort-key.
+
+2009-11-22  Matthias Koeppe  <mkoeppe@math.ucdavis.edu>
+
+	* bibtex-runtime.lisp: Fix erroneous "splitting initials warning"
+	in names such as "Chandler, Jr., Alfred D."  
+	Reported by Paul Foley.
+
+2009-11-22  Paul Foley  <paul@mises.com>
+
+	* bibtex-program.lisp (emulate-bibtex):
+	Bind *gc-verbose* in the right package.
+
+	* bibtex.lisp (compile-bst-file):
+	Bind *print-length* to avoid truncation.
+
 2009-11-20  Matthias Koeppe  <mkoeppe@math.ucdavis.edu>
 
 	Version 1.0.1
