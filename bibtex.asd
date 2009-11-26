@@ -18,7 +18,8 @@
   :version "1.0.1"  
   :depends-on (#-(or cmu sbcl clisp) :port
 		 :split-sequence)
-  :components ((:file "packages")
+  :components ((:file "cmp")
+	       (:file "packages" :depends-on ("cmp"))
 	       (:file "kpathsea" :depends-on ("packages"))
 	       (:file "bibtex-runtime" :depends-on ("packages"))
 	       (:file "lisp-form-builder" :depends-on ("packages"))
