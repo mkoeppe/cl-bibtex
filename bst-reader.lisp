@@ -262,13 +262,10 @@
     (error "Illegal, sort command before read command"))
   (if *bst-compiling*
       (push `(setq ,*bib-entries-symbol*
-	      (stable-sort ,*bib-entries-symbol* 'string<=
-	       :key (lambda (,(bst-intern "ENTRY"))
-		      (gethash "SORT.KEY$" ,(bst-intern "ENTRY") ""))))
+	      (stable-sort ,*bib-entries-symbol* #'cmp<))
 	    *main-lisp-body*)
       (setq *bib-entries*
-	    (stable-sort *bib-entries* 'string<=
-			 :key (lambda (entry) (gethash "SORT.KEY$" entry ""))))))
+	    (stable-sort *bib-entries* #'cmp<))))
 
 (define-bst-command "STRINGS" (name-list)
   (unless (listp name-list)
