@@ -14,13 +14,15 @@
   (:export #:find-file))
 
 (defpackage :bibtex-runtime
-  (:use :common-lisp)
+  (:use :common-lisp :cmp)
   (:shadow #:variable)
   (:export #:*bib-macros* #:*bib-database* #:*bib-entries*
 	   #:*bib-entry* #:*bib-preamble* #:*bib-style*
 	   #:*bib-files* #:*cite-all-entries* #:*cite-keys*
 	   #:*bib-entry-type-functions* #:*min-crossrefs*
+	   #:bib-entry-ref
 	   #:bib-entry-cite-key #:bib-entry-type
+	   #:bib-entry-sort-key
 	   #:read-aux-file #:read-bib-database #:cited-bib-entries
            #:make-bib-entry
 	   #:write-bib-entry
@@ -43,7 +45,7 @@
 	   #:bbl-print #:bbl-terpri #:with-bbl-output))
 
 (defpackage :bibtex-compiler
-  (:use :common-lisp :bibtex-runtime)
+  (:use :common-lisp :cmp :bibtex-runtime)
   (:shadow #:variable)
   (:export #:compile-bst-file #:bibtex
 	   #:*bibtex-styles* #:*allow-load-lisp-bibtex-style*
