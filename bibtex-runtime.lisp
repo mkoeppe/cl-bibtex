@@ -1321,7 +1321,7 @@ associated with a special character."
   ;;
   ;; This behavior of the original BibTeX also exposes a bug in
   ;; gerplain.sty, where the sort order is messed up.  To compute the
-  ;; sort ley, gerplain.sty formats author names in the form "{\sc
+  ;; sort key, gerplain.sty formats author names in the form "{\sc
   ;; LAST  FIRST}" and passes this to PURIFY$.  This results in
   ;; "LASTFIRST".  Thus the order of "Geyer, Foo" and "Ge, Yigong"
   ;; comes out wrong.
