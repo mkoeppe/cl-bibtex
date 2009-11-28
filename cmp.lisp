@@ -1,6 +1,6 @@
 ;;; -*- Mode: LISP; Syntax: ANSI-Common-Lisp; Package: CMP -*-
 
-;;; $Revision: 1.1 $
+;;; $Revision: 1.2 $
 ;;; Copyright © 2005 Paul Foley (mycroft@actrix.gen.nz)
 ;;; All rights reserved.  Use and verbatim redistribution permitted.
 ;;;
@@ -16,7 +16,7 @@
 ;;; (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 ;;; USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 ;;; DAMAGE.
-#+CMU (ext:file-comment "$Header: /sources/cl-bibtex/cl-bibtex/cmp.lisp,v 1.1 2009/11/26 01:48:14 mkoeppe Exp $")
+#+CMU (ext:file-comment "$Header: /sources/cl-bibtex/cl-bibtex/cmp.lisp,v 1.2 2009/11/28 03:09:51 mkoeppe Exp $")
 
 (defpackage "CMP"
   (:use "COMMON-LISP")
@@ -119,3 +119,5 @@ if A and B are not equal and have no meaningful order relation.")
 	(t form)))
 
 #+CMU (ext:define-hash-table-test 'cmp= #'cmp= #'hash)
+#+SBCL (sb-ext:define-hash-table-test cmp= hash)
+#+CLISP (ext:define-hash-table-test cmp= cmp= hash)
