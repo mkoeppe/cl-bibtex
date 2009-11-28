@@ -8,7 +8,7 @@
 (defpackage "ICU")
 (in-package "ICU")
 
-(export '(ucol-open ucol-get-sort-key with-open-collator))
+(export '(ucol-open ucol-close ucol-get-sort-key with-open-collator))
 
 (eval-when (:compile-toplevel :execute)
   (alien:load-foreign "/usr/lib/libicui18n.so.38"
@@ -31,6 +31,10 @@
   (keyarr sys:system-area-pointer)
   (klength c-call:int))
 
+(defstruct icu-sort-key
+  (vector (ext:required-argument) :type (simple-array (unsigned-byte 8) (*))
+	  :read-only t))
+
 (defun ucol-open (locale)
   (multiple-value-bind (collator status) (%ucol-open locale)
     ;; status < 0 : warning     (see /usr/include/unicode/utypes.h)
@@ -50,10 +54,34 @@
 				   -1
 				   (lisp:buffer-sap buffer)
 				   (length buffer))))
-    (lisp::shrink-vector buffer size)))
+    (make-icu-sort-key :vector (lisp::shrink-vector buffer size))))
 
 (defmacro with-open-collator ((var locale) &body body)
   (let ((xvar (gensym)))
     `(let ((,xvar (ucol-open ,locale)))
       (unwind-protect (let ((,var ,xvar)) ,@body)
 	(ucol-close ,xvar)))))
+
+(defmethod cmp:cmp ((a icu-sort-key) (b icu-sort-key))
+  (do ((a (icu-sort-key-vector a))
+       (b (icu-sort-key-vector b))
+       (i 0 (1+ i)))
+      (nil)
+    (declare (optimize (speed 3) (space 1) (safety 0) (debug 0))
+	     (type (integer 0 #.array-dimension-limit) i))
+    (cond ((= i (length a))		; a <= b
+	   (return (if (< i (length b)) -1 0)))
+	  ((= i (length b))		; a > b
+	   (return +1))
+	  ((< (aref a i) (aref b i))	; a < b
+	   (return -1))
+	  ((> (aref a i) (aref b i))	; a > b
+	   (return +1)))))
+
+(defmethod cmp:hash ((thing icu-sort-key))
+  (let ((thing (icu-sort-key-vector thing))
+	(x #.(sxhash pi)))
+    (declare (type (integer 0 #.most-positive-fixnum) x))
+    (dotimes (i (length thing) x)
+      (declare (type (integer 0 #.array-dimension-limit) i))
+      (setq x (logxor x (mod (* i (aref thing i)) most-positive-fixnum))))))
