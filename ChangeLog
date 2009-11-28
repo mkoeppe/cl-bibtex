@@ -1,3 +1,10 @@
+2009-11-27  Paul Foley  <paul@mises.com>
+
+	* icu.lisp: Add ICU sort-key comparisons, avoiding the need to
+	define CMP between vectors.
+
+	* cmp.lisp: Define hash table tests on SBCL, CLISP.
+
 2009-11-25  Paul Foley  <paul@mises.com>
 
 	Add support for Unicode collation on CMUCL, using libicu.
