@@ -1,5 +1,8 @@
 2009-11-27  Paul Foley  <paul@mises.com>
 
+	* bibtex-runtime.lisp (setf bib-entry-ref): If SORT.KEY$ is
+	changed, remove the cached sort key.
+
 	* icu.lisp: Add ICU sort-key comparisons, avoiding the need to
 	define CMP between vectors.
 
