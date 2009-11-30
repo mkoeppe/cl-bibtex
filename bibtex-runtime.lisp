@@ -253,6 +253,7 @@ non-nil, remove any leading or trailing whitespace."
 
 (defun (setf bib-entry-ref) (value key entry &optional default)
   (declare (ignore default))
+  (when (string= key "SORT.KEY$") (setf (bib-entry-sort-key% entry) nil))
   (setf (gethash key (bib-entry-dict entry)) value))
 
 (defvar *generate-sort-key* #'identity)
