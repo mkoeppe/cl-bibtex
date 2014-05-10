@@ -319,11 +319,11 @@
 
 (defun test-style-file (style-file-name)
   (let ((conditions '()))
-    (handler-case 
+    (handler-case
 	(handler-bind ((condition
 			(lambda (condition)
 			  (push condition conditions))))
-	  (let ((lisp-file-name (make-pathname :type "lbst" 
+	  (let ((lisp-file-name (make-pathname :type "lbst"
 					       :directory *temp-directory*
 					       :defaults style-file-name)))
 	    (handler-case
@@ -430,11 +430,10 @@
       (process-close process))))
 
 (defun call-diff (file-a file-b &optional (output t))
-  (let ((process 
+  (let ((process
 	 (extensions:run-program "/usr/bin/diff"
 				 `("-u" ,(namestring file-a) ,(namestring file-b))
 				 :output output
 				 :if-output-exists :supersede)))
     (prog1 (process-exit-code process)
       (process-close process))))
-				 
