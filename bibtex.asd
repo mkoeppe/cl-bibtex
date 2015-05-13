@@ -4,9 +4,9 @@
 ;; this bibtex asd file by Hans Halvorson <hhalvors@princeton.edu>
 ;;
 ;; This code is free software; you can redistribute it and/or
-;; modify it under the terms of version 2.1 of the GNU Lesser
-;; General Public License as published by the Free Software
-;; Foundation or any later version, as clarified by the preamble
+;; modify it under the terms of version 2.1 of the GNU Lesser 
+;; General Public License as published by the Free Software 
+;; Foundation or any later version, as clarified by the preamble 
 ;; found in COPYING-preamble.txt. This preamble is in the style
 ;; of the Franz Inc. preamble at http://opensource.franz.com/preamble.html
 ;; with names and copyright holders altered accordingly.
@@ -15,7 +15,7 @@
 (in-package :bibtex-system)
 
 (defsystem bibtex
-  :version "1.0.1"
+  :version "1.0.1"  
   :depends-on (#-(or cmu sbcl clisp) :port
 		 :split-sequence)
   :components ((:file "cmp")
@@ -26,7 +26,7 @@
 	       (:file "bst-functions" :depends-on ("packages" "lisp-form-builder"
 							      "bibtex-runtime"))
 	       (:file "interpreter" :depends-on ("bst-functions"))
-	       (:file "bibtex-compiler" :depends-on ("lisp-form-builder" "bst-functions"
+	       (:file "bibtex-compiler" :depends-on ("lisp-form-builder" "bst-functions" 
 									 "bibtex-runtime"))
 	       (:file "bst-reader" :depends-on ("interpreter" "bst-functions"
 						"bibtex-compiler" "bibtex-runtime"))

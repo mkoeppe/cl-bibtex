@@ -2,9 +2,9 @@
 ;; Copyright 2001, 2002, 2007 Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>
 ;;
 ;; This code is free software; you can redistribute it and/or
-;; modify it under the terms of version 2.1 of the GNU Lesser
-;; General Public License as published by the Free Software
-;; Foundation or any later version, as clarified by the preamble
+;; modify it under the terms of version 2.1 of the GNU Lesser 
+;; General Public License as published by the Free Software 
+;; Foundation or any later version, as clarified by the preamble 
 ;; found in COPYING-preamble.txt. This preamble is in the style
 ;; of the Franz Inc. preamble at http://opensource.franz.com/preamble.html
 ;; with names and copyright holders altered accordingly.
