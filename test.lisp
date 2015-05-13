@@ -421,20 +421,35 @@
 
 (defun call-original-bibtex (file-stem)
   (let ((process
-	 (extensions:run-program *original-bibtex*
-				 (list (namestring
-					(make-pathname :type nil
-						       :defaults file-stem)))
-				 :output t)))
-    (prog1 (process-exit-code process)
-      (process-close process))))
+	 #+abcl
+          (sys:run-program *original-bibtex*
+                           (list (namestring
+                                  (make-pathname :type nil
+                                                 :defaults file-stem))))
+         #-(or abcl)
+          (extensions:run-program *original-bibtex*
+                                  (list (namestring
+                                         (make-pathname :type nil
+                                                        :defaults file-stem)))
+                                  :output t)))
+    (prog1
+        #+abcl (sys:process-exit-code process)
+        #-(or abcl) (process-exit-code process)
+        #-(or abcl) (process-close process))))
 
 (defun call-diff (file-a file-b &optional (output t))
-  (let ((process 
-	 (extensions:run-program "/usr/bin/diff"
+  (let ((process
+         #+abcl
+          (sys:run-program "/usr/bin/diff"
+                                  `("-u" ,(namestring file-a) ,(namestring file-b))
+                                  :output output
+                                  :if-output-exists :supersede)
+         #-(or abcl)
+          (extensions:run-program "/usr/bin/diff"
 				 `("-u" ,(namestring file-a) ,(namestring file-b))
 				 :output output
 				 :if-output-exists :supersede)))
-    (prog1 (process-exit-code process)
-      (process-close process))))
-				 
+    (prog1
+        #+abcl (sys:process-exit-code process)
+        #-(or abcl) (process-exit-code process)
+        #-(or abcl) (process-close process))))

@@ -39,6 +39,13 @@
 	  (and line
 	       (parse-namestring line))
       (sb-ext:process-close process))))
+  #+abcl
+  (let ((process
+	 (sys:run-program "/usr/bin/env"
+			     (list "kpsewhich" (namestring name)))))
+    (let ((line (read-line (sys:process-output process) nil nil)))
+      (and line
+           (parse-namestring line))))
   #+allegro
   (let ((stream (excl:run-shell-command (vector "/bin/sh"
 						"/bin/sh"
@@ -52,7 +59,7 @@
       (prog1
 	  (and line (parse-namestring line))
 	(port:close-pipe stream))))
-  #-(or cmu sbcl allegro)
+  #-(or cmu sbcl abcl allegro)
   (let ((stream (port:pipe-input "kpsewhich" (namestring name))))
     (let ((line (read-line stream nil nil)))
       (prog1

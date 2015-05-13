@@ -16,7 +16,7 @@
 
 (defsystem bibtex
   :version "1.0.1"  
-  :depends-on (#-(or cmu sbcl clisp) :port
+  :depends-on (#-(or cmu abcl sbcl clisp) :port
 		 :split-sequence)
   :components ((:file "cmp")
 	       (:file "packages" :depends-on ("cmp"))
