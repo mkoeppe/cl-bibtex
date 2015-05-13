@@ -1,3 +1,7 @@
+2014-05-08  Cyrus Harmon <cyrus@bobobeach.com>
+
+	Add ABCL support.
+
 2009-11-27  Paul Foley  <paul@mises.com>
 
 	* bibtex-runtime.lisp (setf bib-entry-ref): If SORT.KEY$ is
@@ -11,7 +15,7 @@
 2009-11-25  Paul Foley  <paul@mises.com>
 
 	Add support for Unicode collation on CMUCL, using libicu.
-	
+
 	* icu.lisp: New file, Unicode collation support.
 
 	* packages.lisp: New exports bib-entry-ref, bib-entry-sort-key.
@@ -38,7 +42,7 @@
 2009-11-22  Matthias Koeppe  <mkoeppe@math.ucdavis.edu>
 
 	* bibtex-runtime.lisp: Fix erroneous "splitting initials warning"
-	in names such as "Chandler, Jr., Alfred D."  
+	in names such as "Chandler, Jr., Alfred D."
 	Reported by Paul Foley.
 
 2009-11-22  Paul Foley  <paul@mises.com>
@@ -52,7 +56,7 @@
 2009-11-20  Matthias Koeppe  <mkoeppe@math.ucdavis.edu>
 
 	Version 1.0.1
-	
+
 	* bibtex.asd, bibtex.lisp, Makefile: Bump version number
 
 	* bibtex.lisp: Use keyword in in-package
@@ -69,7 +73,7 @@
 
 2008-09-03  Matthias Koeppe  <mkoeppe@math.ucdavis.edu>
 
-	* bibtex.asd: Fix ASDF system version. 
+	* bibtex.asd: Fix ASDF system version.
 	Reported by Cyrus Harmon.
 
 2008-09-03  Cyrus Harmon  <cyrus@cyrusharmon.org>
