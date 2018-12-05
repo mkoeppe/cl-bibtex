@@ -13,9 +13,16 @@ found in COPYING-preamble.txt.
 
 (Note: run-lisp is included from CLOCC and has its own license.)
 
-The project pages are at 
+Development now takes place on GitHub at
+
+    https://github.com/mkoeppe/cl-bibtex
+
+A project home page is at
 
     http://www.nongnu.org/cl-bibtex/
+
+(The old development pages at
+http://savannah.nongnu.org/projects/cl-bibtex/ are obsolete.)
 
 There is a mailing list `cl-bibtex-users@nongnu.org'.
 You can subscribe to the list at 
@@ -86,7 +93,7 @@ The function BIBTEX is like the bibtex program.  Pass the file name
 STEM; BIBTEX will read STEM.aux, interpret a BST file, and write
 STEM.bbl:
 
-	(bibtex-compiler:bibtex "ibm-theory")
+	(bibtex-compiler:bibtex "example")
 
 In fact, when the STEM.aux file requests a bibliography style, BIBTEX
 first looks whether a Lisp function that implements the style has been
@@ -111,10 +118,10 @@ The resulting Lisp file is a readable Common Lisp version of the BST
 file, which can be run on the AUX file to produce a BBL file, without
 using the BST interpreter:
 
-        (load "amsalpha.lbst" 
-              :if-source-newer :compile)            ; calls DEFINE-BIBTEX-STYLE
+        (compile-file "amsabbrv.lbst")
+        (load "amsabbrv.lbst")            ; calls DEFINE-BIBTEX-STYLE
 
-	(bibtex-compiler:bibtex "ibm-theory")	    ; now uses the Lisp style
+	(bibtex-compiler:bibtex "example")	    ; now uses the Lisp style
 
 There is also a little shell script "bibtex" for invoking CL-BIBTEX
 from the shell; it uses the "run-lisp" script from CLOCC.
