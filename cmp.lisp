@@ -1,7 +1,7 @@
 ;;; -*- Mode: LISP; Syntax: ANSI-Common-Lisp; Package: CMP -*-
 
 ;;; $Revision: 1.2 $
-;;; Copyright © 2005 Paul Foley (mycroft@actrix.gen.nz)
+;;; Copyright 2005 Paul Foley (mycroft@actrix.gen.nz)
 ;;; All rights reserved.  Use and verbatim redistribution permitted.
 ;;;
 ;;; THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
