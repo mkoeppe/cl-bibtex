@@ -111,8 +111,8 @@ An important function is READ-ALL-BIB-FILES-AND-COMPUTE-BIB-ENTRIES.
 You can invoke the BST-to-Common-Lisp compiler with the function
 COMPILE-BST-FILE:
 
-	(bibtex-compiler:compile-bst-file (kpathsea:find-file "amsalpha.bst")
-					  "amsalpha.lbst")
+	(bibtex-compiler:compile-bst-file (kpathsea:find-file "amsabbrv.bst")
+					  "amsabbrv.lbst")
 
 The resulting Lisp file is a readable Common Lisp version of the BST
 file, which can be run on the AUX file to produce a BBL file, without
