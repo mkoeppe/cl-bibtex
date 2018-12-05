@@ -165,7 +165,11 @@ generated for the BibTeX style file")
 
 (defun bst-intern (name)
   "Intern NAME into *BST-PACKAGE*, shadowing imported symbols."
-  (shadow name *bst-package*)
+  (multiple-value-bind (symbol type)
+      (find-symbol name *bst-package*)
+    (case type
+      ((nil :inherited)
+       (shadow name *bst-package*))))
   (intern name *bst-package*))
 
 (defun check-for-already-defined-function (name)
