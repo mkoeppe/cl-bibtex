@@ -1,6 +1,14 @@
 An -*- outline -*- of the user-visible changes in CL-BibTeX
 
-* News since version 1.0
+* News in version 1.1 (2018-12-04)
+
+** Added ABCL and ECL support.
+
+** Added support for Unicode collation on CMUCL, using libicu.
+
+** Bugfixes.
+
+* News in version 1.0.1 (2009-11-20)
 
 ** New feature
 
@@ -75,7 +83,7 @@ An -*- outline -*- of the user-visible changes in CL-BibTeX
 *** BibTeX styles using the KEY attribute of bibliographic entries now work
     as expected.
 
-* News in version 1.0
+* News in version 1.0 (2007-08-24)
 
 ** CL-BibTeX is now released under GNU LGPL 2.1 or later 
    with Franz-style Lisp clarification.
@@ -84,7 +92,7 @@ An -*- outline -*- of the user-visible changes in CL-BibTeX
 
    It was contributed by Hans Halvorson.
 
-* News in version 0.4
+* News in version 0.4 (2003-03-31)
 
 ** BibTeX's output line breaking mechanism has been implemented.
 
@@ -152,12 +160,12 @@ An -*- outline -*- of the user-visible changes in CL-BibTeX
 *** Crossrefs are also resolved when all entries are cited (\cite{*}).
 
 
-* News in version 0.3.1
+* News in version 0.3.1 (2002-12-15)
 
   This is a bug-fix release.
 
 
-* News in version 0.3
+* News in version 0.3 (2002-12-15)
 
 ** The compiler now supports BibTeX macros (named strings).
 
@@ -183,7 +191,7 @@ An -*- outline -*- of the user-visible changes in CL-BibTeX
 *** A capitalization bug has been fixed.
 
 
-* News in version 0.2
+* News in version 0.2 (2002-11-25)
 
 ** Nested .aux files are now handled.
 
