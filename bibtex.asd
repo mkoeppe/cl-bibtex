@@ -15,7 +15,10 @@
 (in-package :bibtex-system)
 
 (defsystem bibtex
-  :version "1.1"  
+  :version "1.1"
+  :description "Compatible re-implementation of the BibTeX program, with a BST-to-CL compiler."
+  :author "Matthias Koeppe <mkoeppe@math.ucdavis.edu>"
+  :licence "LGPL 2.1+"
   :depends-on (#-(or cmu abcl sbcl clisp ecl) :port
 		 :split-sequence)
   :components ((:file "cmp")
