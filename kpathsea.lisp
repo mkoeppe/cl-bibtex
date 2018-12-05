@@ -1,5 +1,5 @@
 ;; An interface to Kpathsea (TeX's file search library)
-;; Copyright 2001, 2002, 2007 Matthias Koeppe <mkoeppe@mail.math.uni-magdeburg.de>
+;; Copyright 2001, 2002, 2007, 2018 Matthias Koeppe <mkoeppe@math.ucdavis.edu>
 ;;
 ;; This code is free software; you can redistribute it and/or
 ;; modify it under the terms of version 2.1 of the GNU Lesser 
@@ -59,7 +59,15 @@
       (prog1
 	  (and line (parse-namestring line))
 	(port:close-pipe stream))))
-  #-(or cmu sbcl abcl allegro)
+  #+ecl
+  (let ((stream
+	 (ext:run-program "/usr/bin/env"
+			  (list "kpsewhich" (namestring name))
+			  :output :stream)))
+    (let ((line (read-line stream nil nil)))
+      (and line
+	   (parse-namestring line))))
+  #-(or cmu sbcl abcl allegro ecl)
   (let ((stream (port:pipe-input "kpsewhich" (namestring name))))
     (let ((line (read-line stream nil nil)))
       (prog1
