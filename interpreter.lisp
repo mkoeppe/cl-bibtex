@@ -120,8 +120,6 @@ program.")
   (cond
     ((bst-function-value bst-function)	; is a variable
      (push (bst-function-value bst-function) *literal-stack*))
-    ((bst-function-body bst-function)	; is a wiz-defined function
-     (bst-execute-body (bst-function-body bst-function)))
     ((bst-function-lisp-name bst-function) ; is a primitive, so call it
      (let* ((args (nreverse (mapcar #'bst-pop/coerce
 				    (reverse (bst-function-argument-types bst-function)))))
@@ -130,5 +128,5 @@ program.")
 	      (apply (bst-function-lisp-name bst-function) args))))
        (dolist (type (bst-function-result-types bst-function))
 	 (bst-coerce/push (pop results) type))))
-    (t (error "Don't know how to execute the function ~S" bst-function))))
-    
+    (t ; is a wiz-defined function
+     (bst-execute-body (bst-function-body bst-function)))))
