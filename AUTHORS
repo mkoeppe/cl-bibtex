@@ -7,3 +7,12 @@ Matthias Koeppe
      wrote the CL-BibTeX system while looking at the original BibTeX
      code. 
 
+Paul Foley
+
+     added support for Unicode collation on CMUCL
+
+Cyrus Harmon
+
+     added ABCL support and contributed bugfixes
+
+
